@@ -83,6 +83,13 @@ Deux registres, et la coupure entre eux est le point de l'échelle :
 - **Titre — 15, 20, 32 px.** L'écart avec le registre donnée est ce qui fait lire un
   titre comme un titre.
 
+⚠️ **Écart avec le tracker (2026-10-31).** Cette échelle est périmée depuis #34 (2026-08-16), qui
+sortait 20 et 32 au profit de la table macOS d'Apple (17 / 22 / 26). La migration a été exécutée
+par #82 : titres en `--text-title-1` 22/26/700, héros de Revue et compteur de Lot en
+`--text-large-title` 26/32/700. `--text-xl` (20) ne sert plus qu'aux glyphes, `--text-2xl` (32)
+n'a plus de consommateur. Le tracker et `docs/design-system/tokens.md` § Typographie priment ; ce
+paragraphe nomme l'écart, il ne réécrit pas le bloc ci-dessus.
+
 `--text-base:13px` est exactement la taille par défaut de macOS dans les HIG.
 `--text-xs:10px` est exactement le plancher de lisibilité qu'elles fixent. **Rien ne
 descend sous 10 px**, ni par token ni par littéral. Deux crans inférieurs ont existé

@@ -123,6 +123,20 @@ qui monte en contraste. AA (4,5:1) tenu sur les cinq écrans peuplés, sauf le b
 l'accent reste ouverte, #64 Décision 1, et c'est elle qui fixe ce contraste (triage de #61,
 2026-10-05).
 
+**Registre titre — exécuté le 2026-10-31 (#82, décision d'Antoine « 1 + 3 »).** La table macOS
+d'Apple retenue par #31/#34 sortait 20 et 32 de l'échelle au profit de 17/22/26 ; elle n'avait
+jamais été migrée. Deux rôles de titre, chacun lié à son interligne, en emphase Bold (700, face
+Inter 700 chargée par `frontend/main.ts`) :
+
+| rôle | token taille / interligne | valeur | sites |
+|---|---|---|---|
+| Title 1 | `--text-title-1` / `--leading-title-1` | 22 / 26 | `.sift-sel-count`, `.sift-settings-title`, `.sift-empty-title`, `.sift-usage-name` |
+| Large Title | `--text-large-title` / `--leading-large-title` | 26 / 32 | `.sift-player-name` (héros de Revue), `.sift-bsel-count` (compteur de Lot, interligne 1) |
+
+`--text-xl` (20) ne porte plus de titre : il reste aux glyphes (`.cov i`, `identify-shared.ts`).
+`--text-2xl` (32) n'a plus de consommateur. Le 26 du héros renverse la décision du 2026-09-09
+(Revue 26 → 20), prise sur la foi de l'échelle de `DESIGN.md` § 2, déjà périmée par #34.
+
 Règles :
 
 - pas de typo hero dans les panneaux compacts ;

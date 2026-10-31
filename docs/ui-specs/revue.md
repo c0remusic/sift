@@ -112,8 +112,8 @@ puis portées dans le code dans la même session. La maquette reste la référen
 | **File** | carte flottante (bordure + rayon 14, insetée par le padding de `#content`) | **bord à bord** — collée au rail, à la barre, au bas de fenêtre ; filets sur ses seuls flancs. Séparateurs **entre rangées**, 1 px, en retrait (`--space-8`), effacés autour de la rangée survolée/ouverte (comportement des Mail récents) ; hauteur de rangée 46 inchangée (`::before` absolu) |
 | **Filet sous la barre** | aucun | **1 px bord à bord** sous `#sift-titlebar` — le séparateur qui borne la zone (motif Mail, en-tête de colonne) |
 | **Barre** | `--toolbar-h: 44` (dérivation locale) | **48** — la toolbar du kit App Window (72:165). L'ancienne dérivation reste un plancher |
-| **Entrée de rail** | `.nv` 34, padding 8/8 | **28**, padding 7/8 — l'item sidebar du kit (61:1606) |
-| **Titre de piste** | 32/600 (`--text-2xl`) | **26/32** — Large Title du styleguide kit. Littéral sourcé, à rationaliser avec #31 |
+| **Entrée de rail** | `.nv` 34, padding 8/8 | **28**, padding 7/8 — l'item sidebar du kit (61:1606). Mesuré à 31 avec l'icône de 17 ; depuis le 2026-10-31 (#61) `height:28`, icône au corps du libellé (13, `--text-base`) |
+| **Titre de piste** | 32/600 (`--text-2xl`) | **26/32** — Large Title du styleguide kit. ~~Littéral sourcé, à rationaliser avec #31~~ Passé à 20 le 2026-09-09 (audit lot 4), **rétabli à 26/32/700** le 2026-10-31 par le token `--text-large-title` (#82, décision d'Antoine « 1 + 3 ») |
 | **Épaisseur des filets** | 0,5 px hairline partout | **1 px partout** (le kit dessine à 1 ; 0,5 rend inégal selon DPI). Sweep complet styles.css + vues TS, `app.js` (maquette héritée) exclu |
 
 ⚠️ Deux amendements au § du 2026-08-26 : « le corps de la zone C reste sans aucun filet »
@@ -834,8 +834,9 @@ rayons (ci-dessous).
   inchangé, et seul cran qui ne vient pas du kit). L'ancienne dérivation par `calc()` donnait
   8 et 10 : les neuf composants livrés de Revue étaient **tous** décalés d'un cran vers le
   rond, pour cette seule raison. Toujours le token, **jamais un littéral**.
-- **Typographie** = 3 tailles effectives (`--text-lg` 15 / `--text-base` 13 / `--text-sm`
-  11), hiérarchie par l'**encre**, **monospace réservé** aux chiffres alignés en colonne
+- **Typographie** = ~~3 tailles effectives (`--text-lg` 15 / `--text-base` 13 / `--text-sm`
+  11)~~ — faux depuis le titre de piste (Large Title 26, `--text-large-title`, #82) ; Apple ne
+  compte pas les tailles par écran (triage de #61, 2026-10-05). Hiérarchie par l'**encre**, **monospace réservé** aux chiffres alignés en colonne
   (durées, mesures) + `tabular-nums`. Échelle SF Pro du styleguide confirmée
   (26/22/17/15/13/11/10 pt).
 

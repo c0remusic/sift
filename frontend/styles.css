@@ -287,6 +287,15 @@ color-scheme:light;
    sépare enfin le registre « donnée » (10-13) du registre « titre » (15-32).
    Peu de sites touchés, mesuré : --text-lg 12 usages, --text-xl 5, --text-2xl 1. */
 --text-lg:15px;--text-xl:20px;--text-2xl:32px;
+/* REGISTRE TITRE, table macOS d'Apple (#31/#34, exécutée le 2026-10-31 — #82, décision d'Antoine
+   « 1 + 3 »). #34 avait sorti 20 et 32 de l'échelle au profit de 17/22/26, sans migrer les sites :
+   le titre vivait encore à 20/600 sur cinq classes. Deux rôles, chacun lié à son interligne
+   d'Apple : Title 1 22/26 et Large Title 26/32, tous deux en emphase Bold (700). Le héros de Revue
+   et le compteur de Lot prennent Large Title — ce qui renverse la décision du 2026-09-09 (Revue
+   26 → 20), prise sur une prémisse fausse (`DESIGN.md` portait encore 15/20/32).
+   --text-xl (20) ne porte plus aucun titre : il reste aux GLYPHES qui le consomment (`.cov i`,
+   `identify-shared.ts`). --text-2xl (32) n'a plus aucun consommateur — signalé, pas retiré. */
+--text-title-1:22px;--leading-title-1:26px;--text-large-title:26px;--leading-large-title:32px;
 /* Spacing scale (system.md): the ONLY allowed values.
    --space-6 AJOUTÉ le 2026-08-25 (#47) : le kit macOS Big Sur pose un padding vertical de 6 sur
    ses contrôles (push 43:43, champ texte 45:1008, pulldown 45:152) et l'échelle sautait de 4 à 8 —
@@ -845,14 +854,19 @@ body.sift-aside-hidden #sift-aside,body.sift-aside-hidden #sift-aside-resize{dis
    de 1 ou 2px, ce que ce geste-là s'interdisait.
    RÉOUVERTURE : le jour où un déplacement de rendu est autorisé sur le rail, la question à
    trancher n'est pas « quel calc » mais « quel barreau » — 15 pour la marque, 15 ou 13 pour
-   l'entrée. C'est une décision de design, elle se prend sur le ticket, pas ici. */
+   l'entrée. C'est une décision de design, elle se prend sur le ticket, pas ici.
+   TRANCHÉ le 2026-10-31 (#61, Antoine) : 13, --text-base, pour l'entrée — le barreau du libellé. */
 /* `.nav-brand` n'existe plus : la marque a quitté le rail pour le segment gauche de la barre
    unifiée le 2026-09-03 (issue #56) — ses valeurs vivent dans `chrome.ts::injectLeanStyle`
    (#sift-tb-brand, mêmes tokens). Le débat d'échelle d'icône ci-dessus la suit là-bas. */
 .nv-grp{font-size:var(--text-xs);font-weight:400;letter-spacing:.08em;text-transform:uppercase;color:var(--color-text-tertiary);padding:var(--space-12) var(--space-8) var(--space-4)}
 /* 28 et 7/8 : l'item de sidebar du kit (61:1606, pad 8h/7v) — décision maquette 2026-08-26,
-   portage #50. Le 34 précédent était un dérivé local sans source composant. */
-.nv{min-height:28px;border-radius:var(--border-radius-md);display:flex;flex-direction:row;align-items:center;gap:var(--space-12);padding:7px var(--space-8);color:var(--color-text-tertiary);cursor:pointer}
+   portage #50. Le 34 précédent était un dérivé local sans source composant.
+   `height:28px` remplace `min-height:28px` + `padding:7px` le 2026-10-31 (#61) : mesuré dans la
+   vraie fenêtre, le min-height n'agissait jamais — l'icône de 17px peignait les vues à 31px, les
+   sources à 28,3. L'icône passe au corps du libellé (--text-base, décision d'Antoine), le contenu
+   tient dans les 28 du kit, et le 7 hors échelle disparaît. */
+.nv{height:28px;border-radius:var(--border-radius-md);display:flex;flex-direction:row;align-items:center;gap:var(--space-12);padding:0 var(--space-8);color:var(--color-text-tertiary);cursor:pointer}
 /* `:not(.nav-badge)` N'EST PAS UN ORNEMENT — sans lui ce sélecteur écrase silencieusement DEUX
    déclarations de `.nav-badge`, qui est lui aussi un `<span>` dans `.nv`. `.nv span` pèse 0-1-1,
    `.nav-badge` 0-1-0 : l'ordre dans le fichier n'y change rien, le badge perdait quoi qu'il
@@ -885,7 +899,7 @@ body.sift-aside-hidden #sift-aside,body.sift-aside-hidden #sift-aside-resize{dis
    UNIFORME (une couleur par section serait le patron Réglages Système, un autre). La teinte tient
    sur TOUS les états, sélection comprise : Finder garde ses glyphes bleus sur la rangée active —
    c'est le fond qui dit la sélection, pas l'icône. Refs : 01-finder.png, 03-mail.png. */
-.nv i{font-size:17px;flex:none;color:var(--color-text-info)}
+.nv i{font-size:var(--text-base);flex:none;color:var(--color-text-info)}
 .nv:hover{background:var(--overlay-hover)}
 .nv.on{background:var(--color-nav-active);color:var(--color-text-primary);font-weight:500}
 /* `10px` était la valeur déclarée depuis toujours et jamais peinte (voir `.nv span` ci-dessus) :
@@ -1978,7 +1992,7 @@ body[data-view="revue"] .sift-pz-row.sift-pz-analyze{display:none}
 .lr.sel{background:var(--color-background-secondary)}
 /* Résumé agrégé de la sélection, zone D. Même grammaire libellé/valeur que le reste de
    l'inspecteur : libellé à gauche en encre secondaire, valeur à droite en primaire. */
-.sift-sel-count{font-size:var(--text-xl);font-weight:600;margin-bottom:var(--space-12)}
+.sift-sel-count{font-size:var(--text-title-1);line-height:var(--leading-title-1);font-weight:700;margin-bottom:var(--space-12)}
 .sift-sel-rows{display:grid;grid-template-columns:1fr auto;gap:var(--space-4) var(--space-12);margin:0;font-size:var(--text-md)}
 .sift-sel-rows dt{color:var(--color-text-secondary)}
 .sift-sel-rows dd{margin:0;text-align:right;color:var(--color-text-primary);font-variant-numeric:tabular-nums}
@@ -2303,7 +2317,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Résumé de sélection — zone C, en-tête du board Lot */
 .sift-bsel{display:flex;flex-direction:column;gap:var(--space-8);padding:var(--space-16) var(--space-16) var(--space-8);border-bottom:1px solid var(--color-border-tertiary)}
 .sift-bsel-empty{padding:var(--space-8);color:var(--color-text-secondary);font-size:var(--text-sm);text-align:center}
-.sift-bsel-count{font-size:28px;font-weight:600;line-height:1;color:var(--color-text-primary);display:flex;align-items:baseline;gap:var(--space-8)}
+.sift-bsel-count{font-size:var(--text-large-title);font-weight:700;line-height:1;color:var(--color-text-primary);display:flex;align-items:baseline;gap:var(--space-8)}
 .sift-bsel-count-label{font-size:var(--text-sm);font-weight:400;color:var(--color-text-secondary)}
 .sift-bsel-pills{display:flex;gap:var(--space-4);flex-wrap:wrap}
 .sift-bsel-pill{font-size:var(--text-xs);font-weight:500;padding:2px var(--space-8);border-radius:var(--border-radius-pill)}
@@ -2709,8 +2723,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    écran à six crans. Rapport à l'artiste (`.sift-player-sub`, --text-lg 15 px) : 1,33. Ce
    commentaire disait « 1,67 au 12 px de l'artiste », faux dès sa naissance — l'artiste est à 15 px
    depuis le 2026-08-05 (triage de #61, 2026-10-05). line-height 1.2 comme la tête d'occupation
-   (.sift-usage-name, même cran). */
-.sift-player-name{font-size:var(--text-xl);line-height:1.2;font-weight:600;color:var(--color-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto;min-width:0}
+   (.sift-usage-name, même cran).
+   26/32/700 le 2026-10-31 (#82, décision d'Antoine « 1 + 3 ») : le héros prend Large Title, la
+   décision du 2026-09-09 ci-dessus tombe — sa prémisse (« hors de l'échelle de DESIGN.md § 2 »)
+   portait sur une échelle que #34 avait déjà remplacée. */
+.sift-player-name{font-size:var(--text-large-title);line-height:var(--leading-large-title);font-weight:700;color:var(--color-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto;min-width:0}
 /* Bumped one step each (annotation: "augmente encore le texte pour que ça fit aussi en haut" —
    the block reached the cover's bottom edge once centered but still fell short of the top; more
    overall block height, not just the title, closes that remaining gap). Artist bumped again +
@@ -3733,7 +3750,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    Rekordbox, `.rkb-fact-label`), contrôle à droite — alignés d'une rangée à l'autre, un filet en
    retrait entre deux rangées (le même retrait que `.rkb-rule`). La phrase d'un libellé, quand elle
    existe, vit SOUS lui en encre secondaire (spec § Zone C). */
-.sift-settings-title{font-size:var(--text-xl);font-weight:600;margin-bottom:var(--space-4);color:var(--color-text-primary)}
+.sift-settings-title{font-size:var(--text-title-1);line-height:var(--leading-title-1);font-weight:700;margin-bottom:var(--space-4);color:var(--color-text-primary)}
 .sift-settings-desc{font-size:var(--text-md);color:var(--color-text-tertiary);line-height:1.45;margin-bottom:var(--space-16)}
 .sift-settings-row{display:grid;grid-template-columns:150px minmax(0,1fr);gap:var(--space-16);align-items:start;padding:var(--space-12) 0}
 .sift-settings-row+.sift-settings-row{border-top:1px solid var(--color-border-tertiary)}
@@ -4004,7 +4021,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Shared empty state (DESIGN.md "État vide") — top-aligned, never centred. Used by Revue (queue),
    Écartés, Bibliothèque, Rekordbox et Journal (2026-07-08) when the screen is a real dead-end. */
 .sift-empty-state{padding:var(--space-32) var(--space-32);display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-8);max-width:360px}
-.sift-empty-title{font-size:var(--text-xl);font-weight:600;color:var(--color-text-primary)}
+.sift-empty-title{font-size:var(--text-title-1);line-height:var(--leading-title-1);font-weight:700;color:var(--color-text-primary)}
 .sift-empty-note{font-size:var(--text-md);color:var(--color-text-tertiary);line-height:1.5}
 /* Action secondaire d'état vide : même grammaire desktop calme que les autres CTA de support. */
 /* « Même grammaire que les autres » est désormais littéral (2026-08-19) : plus de bordure ni de
@@ -4059,7 +4076,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    lisait était donc inatteignable. Voir l'audit Karpathy du même jour. */
 .sift-usage-head{display:flex;align-items:center;gap:var(--space-16)}
 .sift-usage-ident{min-width:0;display:flex;flex-direction:column}
-.sift-usage-name{font-size:20px;font-weight:600;letter-spacing:-0.01em;line-height:1.2;color:var(--color-text-primary)}
+.sift-usage-name{font-size:var(--text-title-1);font-weight:700;letter-spacing:-0.01em;line-height:var(--leading-title-1);color:var(--color-text-primary)}
 .sift-usage-sub{font-size:var(--text-md);color:var(--color-text-secondary)}
 .sift-usage-capacity{margin-left:auto;flex:none;border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-12) var(--space-16);font-size:var(--text-base);font-variant-numeric:tabular-nums;color:var(--color-text-primary)}
 .sift-usage-rule{height:1px;background:var(--color-border-tertiary)}
