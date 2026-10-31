@@ -479,10 +479,21 @@ colors in a multicolumn table* ». Deux maquettes CSS sur les vraies données �
 Mail à filets — **A retenue, sans survol de rangée** (macOS n'en a pas).
 
 Livré : `.lr` sans filet, sans arrondi, sans transition ; zébrure `--overlay-alt` (token neuf,
-un cran au-dessus de `--overlay-hover`, clair .045 / sombre .05) par parité d'index posée par
+clair .045 / sombre .05) par parité d'index posée par
 `createVirtualList` (`libraryTableRowHtml(…, alt)`) — jamais `:nth-child`, la fenêtre recyclée
 changerait de parité au défilement ; aucun `:hover` de rangée, le triangle de lecture se révèle
 au survol de la pochette ; en-tête en encre secondaire ; colonne **Format** en texte
 (`.sift-lib-col-fmt`, en-tête « Format »), la pastille `.pill` quitte la table. `DESIGN.md` § 16
-(« pas d'alternance ») renversé le même jour. Non retenu pour l'instant : l'ordre de Musique
-(Titre d'abord).
+(« pas d'alternance ») renversé le même jour.
+
+**Valeurs de `--overlay-alt` : justifiées le 2026-10-05 (#61), gardées le 2026-10-31** (Antoine,
+côte-à-côte .045 / .055 sur Rangés en thème clair, 232 pistes). Le sombre (.05) est l'alpha même
+du kit Big Sur (Dark/Alternate/Content/Background, blanc à 5 % sur #1E1E1E). Le clair (.045) rend
+la paire WebKit #FFFFFF/#F4F5F5 à voile constant. « Un cran au-dessus de `--overlay-hover` », la
+justification d'origine, n'avait pas de mesure de référence.
+
+**Ordre des colonnes : Artiste · Titre, gardé le 2026-10-31** (#61, Antoine, côte-à-côte avec
+l'ordre de Musique, Titre d'abord, sur les vraies données). Raison : l'artiste vient déjà en
+premier dans Écartés, dans la fiche Métadonnées et dans le nom de fichier ; la table suit le reste
+de l'app plutôt que Musique. Vaut pour les trois tables (Rangés, À re-sourcer, Corbeille), qui
+partagent `library-columns.ts`.

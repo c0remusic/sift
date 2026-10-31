@@ -977,7 +977,8 @@ porte une pochette, celle de Finder n'en porte pas.
 d'un zébrage.~~ **Renversé le 2026-09-10** (décision d'Antoine, « pas fan du design de la
 liste, comment ferait Apple ? ») : la rangée est lue contre la présentation par liste du
 Finder — la seule table de macOS, le kit Big Sur n'en a aucune. **Fonds alternés**
-(`--overlay-alt`, un cran au-dessus de `--overlay-hover`, parité d'index posée par le rendu
+(`--overlay-alt`, clair .045 / sombre .05 — alpha du kit en sombre, paire WebKit
+#FFFFFF/#F4F5F5 en clair, gardés le 2026-10-31, #61 —, parité d'index posée par le rendu
 virtualisé — jamais `:nth-child`, qui s'inverse au défilement), **aucun filet entre
 rangées, aucun arrondi, aucun survol de rangée** (le triangle de lecture se révèle au
 survol de la pochette seule), sélection pleine largeur. Le format devient une colonne de
