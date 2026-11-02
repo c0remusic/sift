@@ -188,10 +188,16 @@ export function injectLeanStyle() {
     // Le mark de l'icône d'app (#64, décision d'Antoine du 2026-11-02 : une seule marque, dedans
     // comme dehors), en remplacement de l'entonnoir Tabler. Source : `brand/mark.svg`. Ses deux
     // couleurs sont des tokens existants, pour suivre le thème comme le veut la direction de
-    // marque : ambre = à trier, vert = rangé.
+    // marque : ambre = à trier, vert = rangé. En sombre, les encres warning/success, qui sont
+    // exactement les pastels de l'icône. En clair, l'orange et le vert système : les encres du
+    // thème clair rendaient le mark trop sombre (Antoine, sur captures du 2026-11-02, variante C).
     "#sift-tb-brand svg{width:16px;height:16px;flex:none}" +
-    "#sift-tb-brand .sift-mark-back{fill:none;stroke:var(--color-text-warning)}" +
-    "#sift-tb-brand .sift-mark-front{fill:var(--color-text-success)}" +
+    "#sift-tb-brand .sift-mark-back{fill:none;stroke:var(--color-hue-orange-solid)}" +
+    "#sift-tb-brand .sift-mark-front{fill:var(--color-hue-green-solid)}" +
+    "@media (prefers-color-scheme:dark){:root:not([data-theme=\"light\"]) #sift-tb-brand .sift-mark-back{stroke:var(--color-text-warning)}" +
+    ":root:not([data-theme=\"light\"]) #sift-tb-brand .sift-mark-front{fill:var(--color-text-success)}}" +
+    ":root[data-theme=\"dark\"] #sift-tb-brand .sift-mark-back{stroke:var(--color-text-warning)}" +
+    ":root[data-theme=\"dark\"] #sift-tb-brand .sift-mark-front{fill:var(--color-text-success)}" +
     "#sift-tb-lspacer{flex:1}" +
     "#sift-rail-toggle{margin-right:var(--space-8)}" +
     // Rail replié : la zone gauche fait 56px (--rail-w redéfinie sur <body>) — seul le bouton de
