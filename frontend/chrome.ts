@@ -195,6 +195,11 @@ export function injectLeanStyle() {
     "body.sift-rail-collapsed #sift-rail-toggle{margin-right:0}" +
     "#sift-tb-right{flex:1;min-width:0;display:flex;align-items:center;gap:var(--space-12);" +
     "padding:0 var(--space-8) 0 var(--space-16)}" +
+    // Windows : les boutons de fenêtre ferment la zone et doivent toucher le bord, comme dans
+    // toute app Windows — sinon le rouge du survol de Fermer s'arrêtait 8 px avant le bord
+    // (signalé par Antoine, mesuré le 2026-11-02). macOS garde ses 8 px : la zone y finit par le
+    // bouton de l'inspecteur.
+    "#sift-tb-right:has(>#sift-tb-controls){padding-right:0}" +
     // Titre de la VUE courante, plus le littéral « Sift » : le nom de l'app est déjà dans le
     // segment gauche de la barre (#sift-tb-brand), et une barre qui répète le nom du logiciel à
     // la place du nom de l'écran ne renseigne rien.
