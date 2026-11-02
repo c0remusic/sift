@@ -47,6 +47,8 @@ import { installRouter } from "./router";
 import { installUpdateBanner } from "./updater";
 import { installAsideResize } from "./toolbar";
 import { initLang } from "./lang-boot";
+import { platform } from "@tauri-apps/plugin-os";
+import { installMacosMenu } from "./macos-menu";
 
 // Only exercise the IPC layer inside the Tauri app. In a plain browser (e.g. the
 // Vercel web demo) there is no Tauri runtime — skip it so the UI renders cleanly.
@@ -64,6 +66,16 @@ if (!inTauri) void import("./app.js");
 
 if (inTauri) void boot();
 
+/** Même lecture que la barre de titre (`chrome.ts`) : un `platform()` qui lève vaut Windows. */
+function isMacos(): boolean {
+  try {
+    return platform() === "macos";
+  } catch (e) {
+    console.error("platform() failed, skipping the macOS menu", e);
+    return false;
+  }
+}
+
 async function boot(): Promise<void> {
   // La langue se tranche AVANT le câblage : chaque écran lit ses textes à l'appel (`i18n.ts`), et
   // tout ce qui rendrait plus tôt le ferait en français. `initLang` ne rejette jamais.
@@ -72,6 +84,8 @@ async function boot(): Promise<void> {
   installRouter();
   // Poignée de la zone D : un nœud du shell (index.html), câblé une fois — 2026-09-08.
   installAsideResize();
+  // Barre de menus macOS dans la langue de Sift (#58) — après `initLang`, qui fixe la langue.
+  if (isMacos()) void installMacosMenu();
   // Pas de vérification de mise à jour en dev : `plugins.updater` n'existe que dans la config de
   // release signée, donc le plugin ne s'enregistre jamais ici (lib.rs, `is_missing_updater_config`)
   // et `check()` échouait à CHAQUE lancement en « update check failed plugin updater not found » —
