@@ -63,6 +63,10 @@ pub enum FilingError {
     /// ranger — celle-là est évincée dans la transaction, sans erreur. Ici c'est un vrai conflit
     /// métier : refus explicite, jamais un `INSERT OR REPLACE` ni un suffixe automatique sur le nom.
     DestOccupied(String),
+    /// L'artiste est vide : le gabarit de nom aurait produit « - Titre », et la piste serait partie
+    /// vers Rekordbox sans artiste. Refusé avant tout effet (décision d'Antoine, 2026-11-02). Revue
+    /// désactive déjà Convertir dans ce cas ; ce refus garde le mode Lot et tout autre appelant.
+    MissingArtist,
     Encode(String),
     Tag(String),
     Io(String),
@@ -81,6 +85,11 @@ impl std::fmt::Display for FilingError {
             FilingError::DestOccupied(p) => f.write_str(&crate::tr!(
                 "destination déjà occupée par une autre piste rangée: {p}",
                 "destination already taken by another filed track: {p}"
+            )),
+            // Affiché lui aussi dans le compte rendu du mode Lot.
+            FilingError::MissingArtist => f.write_str(&crate::tr!(
+                "artiste vide : renseigne-le avant de convertir",
+                "empty artist: fill it in before converting"
             )),
             FilingError::Encode(m) => write!(f, "encode: {m}"),
             FilingError::Tag(m) => write!(f, "tag: {m}"),
@@ -857,6 +866,9 @@ pub fn plan_file(
         Some(c) => c,
         None => reconcile_track(conn, track_id)?,
     };
+    if canonical.artist.trim().is_empty() {
+        return Err(FilingError::MissingArtist);
+    }
 
     let source_rail = crate::analysis::tags::declared_rail(&source);
     // BUG-1 guard: the extension says lossless, but is the CONTENT actually lossy? (an MP3
@@ -3098,6 +3110,43 @@ mod tests {
             Path::new(&src).parent(),
             "en place = le dossier de la source"
         );
+    }
+
+    /// Un artiste vide (ou blanc) est refusé avant tout : le gabarit en aurait fait « - Titre »,
+    /// onze pistes rangées ainsi mesurées le 2026-11-02 (décision d'Antoine : bloquer Convertir).
+    #[test]
+    fn plan_file_refuses_an_empty_artist() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let Some((id, _src)) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        for artist in ["", "   "] {
+            let r = plan_file(
+                &conn,
+                None,
+                "{artist} - {title}",
+                id,
+                FILE_IN_PLACE,
+                None,
+                Some(Canonical {
+                    artist: artist.into(),
+                    title: "Spellbound".into(),
+                    version: None,
+                    label: None,
+                    confidence: crate::naming::Confidence::Yellow,
+                }),
+                false,
+                &library::Reservations::default(),
+                &EncodeProfile::default(),
+            );
+            assert!(
+                matches!(r, Err(FilingError::MissingArtist)),
+                "artiste {artist:?} : {:?}",
+                r.map(|p| p.dest)
+            );
+        }
     }
 
     /// Même absence de racine, destination externe : planifie aussi.

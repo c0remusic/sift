@@ -80,6 +80,14 @@ function updateHeaderName(mid: HTMLElement): void {
 let previewSeq = 0;
 let previewTimer: ReturnType<typeof setTimeout> | undefined;
 
+// refreshPreview is THE point every canonical change goes through (field edit, identification,
+// reopened pane), so it also tells filing.ts to re-arm Convertir, which an empty artist disables.
+// Injected rather than imported: filing.ts already imports this module (no import back).
+let canonicalChangeHook: (() => void) | null = null;
+export function registerCanonicalChangeHook(fn: () => void): void {
+  canonicalChangeHook = fn;
+}
+
 /** Re-sync the filename preview from the current canonical + target. The preview lives in the
  *  rangée réglages de la BOÎTE de lecture (`#filbox-settings`, renderFoot) depuis la décision V2b
  *  du 2026-08-30 — elle était dans le pied de panneau (#filfoot) avant. Elle avait quitté la
@@ -89,6 +97,7 @@ let previewTimer: ReturnType<typeof setTimeout> | undefined;
  *  position dans le DOM ne concerne pas cette fonction. Renders via naming::render_filename (real
  *  template + sanitize()) in Rust — not a TS reimplementation. */
 function refreshPreview(): void {
+  canonicalChangeHook?.();
   const c = state.canonical;
   const prev = document.querySelector<HTMLElement>(".sift-fil-prev");
   if (!c) {

@@ -49,6 +49,7 @@ import {
   defaultTarget,
   updateHeaderName,
   refreshPreview,
+  registerCanonicalChangeHook,
 } from "./filing-preview";
 import {
   renderEditor,
@@ -74,6 +75,7 @@ export { TARGET_LABEL } from "./filing-preview";
 // path and trigger a rail refresh without importing this module back (would be a static cycle).
 registerOpenTrackPathGetter(() => state.track?.path ?? null);
 registerDestChangeHook(() => refreshFootButton());
+registerCanonicalChangeHook(() => refreshRangerButton());
 
 /** Action du CTA « Ajouter un dossier à surveiller » de l'état vide (issue #53) — injectée par
  *  sift-live avec le `pickAndAddFolder` du rail : l'importer ici refermerait le cycle
@@ -106,12 +108,16 @@ function destValueLabel(): string {
 function refreshRangerButton(): void {
   const btn = document.querySelector<HTMLButtonElement>('[data-fil="ranger"]');
   if (!btn) return;
-  const ok = hasDestination();
+  // Un artiste vide bloque aussi (Antoine, 2026-11-02) : le gabarit en faisait « - Titre ». Le
+  // backend le refuse de son côté (`FilingError::MissingArtist`). Tant que la fiche n'est pas
+  // réconciliée (`canonical` null), seule la destination décide.
+  const hasArtist = !state.canonical || state.canonical.artist.trim() !== "";
+  const ok = hasDestination() && hasArtist;
   btn.disabled = !ok;
   // Le raccourci vit dans le tooltip depuis le retrait de la légende clavier (2026-09-03) —
   // même motif que « Écarter — va dans Écartés (⌫) » et « Lecture / pause (espace) ».
   const t = T();
-  btn.title = ok ? t.convertTitle : t.convertNeedsDest;
+  btn.title = !hasDestination() ? t.convertNeedsDest : !hasArtist ? t.convertNeedsArtist : t.convertTitle;
   // Juste « Convertir » : la destination est déjà affichée dans son champ du rail (Antoine
   // 2026-08-21), la répéter dans le bouton faisait doublon. L'état désactivé + le champ Destination
   // en ambre (« Choisir… ») disent qu'il manque une destination.
