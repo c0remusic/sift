@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="190 190 620 620">
+  <!-- Mark de Sift, sans la tuile : carré ambre en contour (le vrac, penché, derrière), carré vert
+       plein (le rangé, droit, devant). Géométrie relevée au pixel sur src-tauri/icons/icon.png
+       (1024 px), dont aucune source vectorielle n'était versionnée (#64) : contour extérieur de
+       409 px à -16° autour de (424, 424), trait de 52 ; carré vert de 409 px en (394, 394), rayon
+       110. Couleurs du thème sombre, celles de l'icône : --color-text-warning et
+       --color-text-success. Dans la fenêtre, le mark suit le thème par ces deux tokens
+       (frontend/chrome.ts). -->
+  <rect x="245.5" y="245.5" width="357" height="357" rx="84" fill="none" stroke="#f2c274" stroke-width="52" transform="rotate(-16 424 424)"/>
+  <rect x="394" y="394" width="409" height="409" rx="110" fill="#9fe0af"/>
+</svg>

@@ -185,7 +185,13 @@ export function injectLeanStyle() {
     // logo), et le rail y gagne une rangée. Mêmes valeurs que l'ex-`.nav-brand` de styles.css.
     "#sift-tb-brand{display:flex;align-items:center;gap:var(--space-8);padding-left:var(--space-12);" +
     "font-size:var(--text-lg);font-weight:600;color:var(--color-text-primary);letter-spacing:var(--tracking-normal)}" +
-    "#sift-tb-brand i{font-size:16px;color:var(--color-text-info)}" +
+    // Le mark de l'icône d'app (#64, décision d'Antoine du 2026-11-02 : une seule marque, dedans
+    // comme dehors), en remplacement de l'entonnoir Tabler. Source : `brand/mark.svg`. Ses deux
+    // couleurs sont des tokens existants, pour suivre le thème comme le veut la direction de
+    // marque : ambre = à trier, vert = rangé.
+    "#sift-tb-brand svg{width:16px;height:16px;flex:none}" +
+    "#sift-tb-brand .sift-mark-back{fill:none;stroke:var(--color-text-warning)}" +
+    "#sift-tb-brand .sift-mark-front{fill:var(--color-text-success)}" +
     "#sift-tb-lspacer{flex:1}" +
     "#sift-rail-toggle{margin-right:var(--space-8)}" +
     // Rail replié : la zone gauche fait 56px (--rail-w redéfinie sur <body>) — seul le bouton de
@@ -312,7 +318,9 @@ export async function injectTitlebar(): Promise<void> {
   // est injectée AVANT lui dans `installLiveWiring`, et de façon synchrone (le premier `await`
   // de cette fonction vient après l'insertBefore).
   const brand =
-    '<span id="sift-tb-brand" data-tauri-drag-region><i class="ti ti-filter" aria-hidden="true"></i>Sift</span>' +
+    '<span id="sift-tb-brand" data-tauri-drag-region><svg viewBox="190 190 620 620" aria-hidden="true">' +
+    '<rect class="sift-mark-back" x="245.5" y="245.5" width="357" height="357" rx="84" stroke-width="52" transform="rotate(-16 424 424)"/>' +
+    '<rect class="sift-mark-front" x="394" y="394" width="409" height="409" rx="110"/></svg>Sift</span>' +
     '<span id="sift-tb-lspacer" data-tauri-drag-region></span>' +
     `<button id="sift-rail-toggle" class="lk-icon" title="${t.railCollapse}" aria-label="${t.railCollapse}" aria-expanded="true"><i class="ti ti-layout-sidebar-left-collapse" aria-hidden="true"></i></button>`;
   // Le bouton de l'inspecteur (zone D), miroir du bouton du rail, au bord droit de la barre : le
