@@ -374,9 +374,12 @@ function fileNote(html: string, color = "var(--color-text-secondary)") {
   const foot = document.getElementById("filfoot");
   if (!foot) return;
   foot.querySelector("[data-file-note]")?.remove();
+  // Sans marge : `#filfoot` est une rangée flex centrée, la note s'y pose À CÔTÉ de Destination, et
+  // la marge basse de 10 px d'avant la remontait de 5 px au-dessus de l'axe (mesuré, #61,
+  // 2026-11-02). L'écart vient du `gap` du rail.
   foot.insertAdjacentHTML(
     "afterbegin",
-    `<div data-file-note style="font-size:var(--text-sm);color:${color};margin-bottom:10px">${html}</div>`,
+    `<div data-file-note style="font-size:var(--text-sm);color:${color}">${html}</div>`,
   );
 }
 

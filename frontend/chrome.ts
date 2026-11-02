@@ -18,7 +18,7 @@ function ensureDropStyle() {
   s.id = "sift-dz-style";
   s.textContent =
     ".sift-dz-on{position:relative;outline:1.5px dashed var(--color-text-info);outline-offset:-4px;border-radius:var(--border-radius-md)}" +
-    ".sift-dz-on::after{content:attr(data-dz);position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:10px;font-size:var(--text-sm);color:var(--color-text-info);background:var(--overlay-drop);border-radius:var(--border-radius-md);pointer-events:none;z-index:50}";
+    ".sift-dz-on::after{content:attr(data-dz);position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:var(--space-8);font-size:var(--text-sm);color:var(--color-text-info);background:var(--overlay-drop);border-radius:var(--border-radius-md);pointer-events:none;z-index:50}";
   document.head.appendChild(s);
 }
 
