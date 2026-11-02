@@ -198,14 +198,34 @@ pub fn reconcile(tag_artist: &str, tag_title: &str, stem: &str) -> Canonical {
             label: None,
             confidence: Confidence::Green,
         },
-        // neither clean -> yellow, best guess = a *cleaned* stem as title for the user to edit
-        (false, None) => Canonical {
-            artist: String::new(),
-            title: clean_stem(stem),
-            version: None,
-            label: None,
-            confidence: Confidence::Yellow,
-        },
+        // neither clean -> yellow, best guess for the user to edit. The cleaned stem is parsed
+        // again first: « 01-Son_Kite_-_Massive » or « [CLX-011] Flex - Don't Rush Me » carry their
+        // artist, only the `_`/`[` junk made `parse_filename` reject the raw name. Without that
+        // second read, the whole cleaned name became the title and the artist stayed empty (eleven
+        // filed tracks measured on 2026-11-02). Failing it, the cleaned stem is the title.
+        // A trailing paren that is a copy counter « (1) » or download noise « (320kbps) » is not a
+        // version: the raw name never offered it as one, the second read must not either. A leading
+        // « - » left by a dropped « [uploader] - » prefix is not part of the artist.
+        (false, None) => {
+            let cleaned = clean_stem(stem);
+            match parse_filename(cleaned.trim_start_matches(['-', ' '])) {
+                Some((artist, title, version)) => Canonical {
+                    artist,
+                    title,
+                    version: version
+                        .filter(|v| !has_junk(v) && !v.chars().all(|c| c.is_ascii_digit())),
+                    label: None,
+                    confidence: Confidence::Yellow,
+                },
+                None => Canonical {
+                    artist: String::new(),
+                    title: cleaned,
+                    version: None,
+                    label: None,
+                    confidence: Confidence::Yellow,
+                },
+            }
+        }
     }
 }
 
@@ -1269,6 +1289,67 @@ mod tests {
         // best guess: the stem cleaned (track no + "_" + quality token dropped)
         assert_eq!(c.title, "audio");
         assert_eq!(c.artist, "");
+    }
+
+    /// Noms RÉELS de la bibliothèque mesurée le 2026-11-02 : onze pistes rangées avec un artiste
+    /// vide et un titre « Artiste - Titre ». Le nom portait le découpage, mais un `_`, un `[` ou un
+    /// préfixe de piste suffisait à `parse_filename` pour rejeter tout le nom, et le repli mettait le
+    /// nom nettoyé ENTIER en titre. Le nettoyage rend ces noms propres : on les relit.
+    #[test]
+    fn neither_clean_reparses_the_cleaned_stem() {
+        for (stem, artist, title, version) in [
+            ("01-Son_Kite_-_Massive", "Son Kite", "Massive", None),
+            (
+                "04-lunaspice_-_deep_diving-mycel",
+                "lunaspice",
+                "deep diving-mycel",
+                None,
+            ),
+            (
+                "[CLX-011] Flex - Don't Rush Me",
+                "Flex",
+                "Don't Rush Me",
+                None,
+            ),
+            ("[DCL007] Essence - Instincts", "Essence", "Instincts", None),
+            (
+                "[DSEX003] Rob Mooney - Up All Night (Remix)",
+                "Rob Mooney",
+                "Up All Night",
+                Some("Remix"),
+            ),
+            // Le préfixe d'un téléchargeur laisse un « - » en tête, et sa parenthèse n'est pas une
+            // version : ni « - DJ Lima… », ni « (320kbps) ».
+            (
+                "[YT2mp3.info] - DJ Lima & Evanz D - On The Way (320kbps)",
+                "DJ Lima & Evanz D",
+                "On The Way",
+                None,
+            ),
+            // Un compteur de copie n'est pas une version.
+            (
+                "Demarkus Lewis - U-Too [www.slider.kz] (1)",
+                "Demarkus Lewis",
+                "U-Too",
+                None,
+            ),
+        ] {
+            let c = reconcile("", "", stem);
+            assert_eq!(c.artist, artist, "{stem}");
+            assert_eq!(c.title, title, "{stem}");
+            assert_eq!(c.version.as_deref(), version, "{stem}");
+            // Deviné depuis un nom sale : l'utilisateur confirme.
+            assert_eq!(c.confidence, Confidence::Yellow, "{stem}");
+        }
+        // Sans séparateur, il n'y a pas d'artiste à deviner : le repli reste le titre seul.
+        for (stem, title) in [
+            ("01 Spellbound", "Spellbound"),
+            ("B1. Dangerous", "B1. Dangerous"),
+        ] {
+            let c = reconcile("", "", stem);
+            assert_eq!(c.artist, "", "{stem}");
+            assert_eq!(c.title, title, "{stem}");
+        }
     }
 
     #[test]

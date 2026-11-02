@@ -948,10 +948,15 @@ mod tests {
     /// à (10, 26, 24, 65) sur 106. Le code que rejoue `reconcile` n'a pas bougé (le chantier
     /// n'ajoute à `naming.rs` que `group_key` et `display_parts`) : seuls les nouveaux cas
     /// déplacent l'aiguille, de +5 exacts, +11 artistes, +7 titres, +21 versions.
-    const BASELINE_EXACT: usize = 10;
-    const BASELINE_ARTIST: usize = 26;
-    const BASELINE_TITLE: usize = 24;
-    const BASELINE_VERSION: usize = 65;
+    ///
+    /// 2026-11-02 : de (10, 26, 24, 65) à (21, 44, 37, 72). `reconcile` relit le nom NETTOYÉ quand
+    /// le nom brut est rejeté (onze pistes rangées avec un artiste vide, « Artiste - Titre » en
+    /// titre). Vérifié cas par cas avant de graver : aucun champ juste ne devient faux — les deux
+    /// pertes de version du premier essai, « (1) » et « (320kbps) », sont filtrées.
+    const BASELINE_EXACT: usize = 21;
+    const BASELINE_ARTIST: usize = 44;
+    const BASELINE_TITLE: usize = 37;
+    const BASELINE_VERSION: usize = 72;
 
     /// Rejoue le corpus contre le code ACTUEL. `reconcile` ne reçoit pas de tags (le corpus mesure
     /// l'extraction depuis le nom et le dossier) et ne reçoit pas le dossier du tout — il ne sait
