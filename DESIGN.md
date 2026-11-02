@@ -242,8 +242,9 @@ Les deux sont **theme-invariants**, comme `--color-text-on-scrim` : ce couple ne
 une surface de l'app, il **est** sa propre surface, et c'est le rapport interne de la paire qu'on
 veut constant.
 
-La valeur **est** le systemBlue d'Apple (`--color-hue-blue-solid`, L 60,28 %). Blanc dessus mesure
-~3,9:1, donc sous le plancher AA — voir la portée ci-dessous.
+La valeur **est** le systemIndigo d'Apple (`--color-hue-indigo-solid`) depuis le 2026-11-02 (#64,
+décision d'Antoine) ; c'était le systemBlue avant. Blanc dessus mesure 5,65:1 en clair et 5,06:1
+en sombre, au-dessus du plancher AA.
 
 ⚠️ Le **fond** d'un bouton secondaire ne fait que 1,86:1 contre la page, sous le 3:1 des HIG pour un
 élément d'interface non textuel. Le kit fait le même écart (~2,3:1 sur carte sombre) : la lisibilité

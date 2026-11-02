@@ -4,8 +4,11 @@
    Surfaces (elevation by clarity + 1px low-opacity dark-tinted borders, no drop shadows): canvas
    #E7E2DB < nav #EDE9E2 < cards/controls #F1EDE7.
    Color = meaning: green (ok/lossless), amber (doute/pending/erreur), red (danger), blue (info) —
-   4 hues sémantiques distinctes depuis 2026-07 (Apple-style palette). --color-text-info est un
-   vrai bleu (focus/sélection/liens/interactif), plus le neutre du CTA primaire.
+   4 hues sémantiques distinctes depuis 2026-07 (Apple-style palette). La famille --color-*-info
+   est l'encre interactive (focus/sélection/liens/glyphes du rail) : elle suit la teinte d'accent,
+   l'indigo système depuis le 2026-11-02 (#64, décision d'Antoine). Seule la teinte a tourné ;
+   fond et anneau gardent leur clarté et leur chroma, l'encre de texte prend
+   --color-hue-indigo-text tel quel.
    --color-text-danger a sa propre teinte rouge, séparée de --color-text-warning (ambre) — les
    deux ne pointent plus vers la même valeur. */
 /* PURGE DU 2026-09-16 — VINGT-SIX classes retirées de ce fichier d'un coup, avec les doc-comments
@@ -101,14 +104,14 @@ color-scheme:light;
    against the paired text token dropped as low as 3.37:1 on the darkest cards (fails AA 4.5:1),
    see the palette-coherence audit (2026-07-10). Same hue as before, chroma resized for a solid
    "pastel card" look, resolved to ~5:1 against their own text token everywhere. */
---color-background-info:oklch(87.46% 0.035 246.74);--color-background-danger:oklch(90.45% 0.045 30.17);--color-background-success:oklch(93.42% 0.035 150.63);--color-background-warning:oklch(99.00% 0.045 73.21);
+--color-background-info:oklch(87.46% 0.035 278.34);--color-background-danger:oklch(90.45% 0.045 30.17);--color-background-success:oklch(93.42% 0.035 150.63);--color-background-warning:oklch(99.00% 0.045 73.21);
 --color-text-primary:oklch(31.16% 0.0067 286.3);--color-text-secondary:oklch(41.0% 0.0067 286.3);--color-text-tertiary:oklch(46.15% 0.0067 286.3);--color-text-quaternary:oklch(50.30% 0.0067 286.3);
---color-text-info:oklch(45.37% 0.0835 246.66);--color-text-danger:oklch(48.88% 0.1399 30.93);--color-text-success:oklch(44% 0.0735 151.97);--color-text-warning:oklch(48% 0.103 75.31);
+--color-text-info:oklch(43.43% 0.1484 283.58);--color-text-danger:oklch(48.88% 0.1399 30.93);--color-text-success:oklch(44% 0.0735 151.97);--color-text-warning:oklch(48% 0.103 75.31);
 /* Encre de bordure re-teintée le 2026-08-16 avec la base neutre : clarté et alphas inchangés
    (0,09 et 0,16, mesurés), seuls l'angle et la chroma rejoignent la famille Apple. Le bloc sombre
    n'a rien à changer : ses bordures sont déjà du blanc à alpha, donc sans teinte. */
 --color-border-tertiary:oklch(25.67% 0.0060 286.3 / 0.09);--color-border-secondary:oklch(25.67% 0.0060 286.3 / 0.16);
---color-border-info:oklch(56.9% 0.1044 246.74 / .35);--color-border-danger:oklch(57.16% 0.1594 30.17 / .42);
+--color-border-info:oklch(56.9% 0.1044 283.58 / .35);--color-border-danger:oklch(57.16% 0.1594 30.17 / .42);
 --color-hue-indigo-text:oklch(43.43% 0.1484 283.58);--color-hue-indigo-bg:oklch(83.28% 0.045 278.34);--color-hue-purple-text:oklch(45.72% 0.1313 307.39);--color-hue-purple-bg:oklch(86.36% 0.05 312.41);--color-hue-pink-text:oklch(45.67% 0.1331 1.47);--color-hue-pink-bg:oklch(86.03% 0.045 2.52);--color-hue-teal-text:oklch(47.62% 0.0805 184.5);--color-hue-teal-bg:oklch(91.40% 0.035 186.37);--color-hue-yellow-text:oklch(54.77% 0.1119 90.23);
 /* Remplissages pleins pour surfaces de donnée (segments de graphique), là où -bg est un fond
    de puce et -text une couleur d'encre. Valeurs système Apple officielles converties en oklch :
@@ -143,13 +146,12 @@ color-scheme:light;
    `--color-hue-blue-solid`, que les deux blocs sombres redéfinissent (#007AFF en clair, #0A84FF en
    sombre). Ce commentaire a dit « les deux valeurs sont THEME-INVARIANTES » jusqu'au 2026-10-05,
    date du triage de #61 qui l'a mesuré.
-   La valeur EST le systemBlue d'Apple, identique à `--color-hue-blue-solid`. Elle avait été
-   assombrie à L 46 % le 2026-08-19 pour atteindre 7:1 avec du blanc ; rendue à L 60,28 % le même
-   jour sur décision d'Antoine — Sift est son outil, pas un produit à auditer, et la fidélité au
-   kit prime ici sur le plancher de contraste. Blanc sur ce bleu mesure 4,02:1 en clair et 3,65:1
-   en sombre (triage de #61, 2026-10-04 ; ce commentaire disait « ~3,9:1 »). La TEINTE de l'accent
-   reste une décision ouverte, #64 Décision 1 : elle fixe à elle seule le contraste de ce bouton. */
---color-accent-fill:var(--color-hue-blue-solid);
+   La valeur EST le systemIndigo d'Apple, identique à `--color-hue-indigo-solid` (#5856D6 en clair,
+   #5E5CE6 en sombre). Teinte tranchée le 2026-11-02 par Antoine sur captures de la vraie fenêtre
+   (#64 Décision 1) : jusque-là c'était le systemBlue, sous AA avec du blanc (4,02:1 en clair,
+   3,65:1 en sombre). L'indigo passe AA dans les deux thèmes : 5,65:1 en clair, 5,06:1 en sombre,
+   ce qui solde #61 point 1 sans assombrir la valeur d'Apple. */
+--color-accent-fill:var(--color-hue-indigo-solid);
 --color-accent-ink:oklch(100% 0 0);
 /* Neutral overlay tints (hover/selection/left-bar/badge on neutral surfaces) — dark-tinted here
    since the surface is light; flipped to light-tinted in the dark variant below. Anything that
@@ -454,7 +456,7 @@ color-scheme:light;
 --color-track:var(--color-background-primary);--color-row-active:var(--color-background-secondary);--color-nav-active:var(--color-background-secondary);
     /* bg-{info,danger,success,warning}: solid, not alpha-over-surface — see light block for the
        contrast rationale (measured as low as 3.37:1 against paired text on the darkest cards). */
-    --color-background-info:oklch(39.16% 0.035 246.74);--color-background-danger:oklch(37.65% 0.045 30.17);--color-background-success:oklch(44.00% 0.035 150.63);--color-background-warning:oklch(42.79% 0.045 73.21);
+    --color-background-info:oklch(39.16% 0.035 278.34);--color-background-danger:oklch(37.65% 0.045 30.17);--color-background-success:oklch(44.00% 0.035 150.63);--color-background-warning:oklch(42.79% 0.045 73.21);
     /* --color-text-secondary : 81.67% → 83.5% le 2026-08-05. Motif MESURÉ, et ce n'est pas celui
        qu'on croyait : en sombre, secondary (81.67) était plus SOMBRE que tertiary (81.92), donc
        moins accentué que le ton censé être plus discret que lui — la hiérarchie du thème clair
@@ -467,9 +469,9 @@ color-scheme:light;
        thème sombre sont sombres : l'éclaircir ne peut qu'augmenter chaque ratio. Garder cette
        valeur identique dans les DEUX blocs sombres. */
     --color-text-primary:oklch(95.9% 0.0067 286.3);--color-text-secondary:oklch(83.5% 0.0067 286.3);--color-text-tertiary:oklch(79.0% 0.0067 286.3);--color-text-quaternary:oklch(76.72% 0.0067 286.3);
-    --color-text-info:oklch(79.21% 0.0789 242.05);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
+    --color-text-info:oklch(74.16% 0.1143 286.69);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
     --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
-    --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
+    --color-border-info:oklch(74.16% 0.1143 286.69 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
     --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(34.15% 0.045 278.34);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(37.40% 0.05 312.41);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(39.91% 0.045 2.52);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(43.48% 0.035 186.37);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
     --color-hue-blue-solid:oklch(62.43% 0.2056 255.49);--color-hue-indigo-solid:oklch(55.64% 0.2032 278.15);--color-hue-teal-solid:oklch(77.06% 0.1181 211.98);--color-hue-green-solid:oklch(75.56% 0.2082 146.98);--color-hue-orange-solid:oklch(78.24% 0.1711 67.22);--color-hue-yellow-solid:oklch(88.49% 0.1805 94.78);--color-hue-purple-solid:oklch(65.60% 0.2274 312.42);--color-hue-pink-solid:oklch(65.77% 0.2317 16.02);--color-hue-red-solid:oklch(66.33% 0.2236 28.29);--color-hue-gray-solid:oklch(68.12% 0.0073 286.21);
     --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);--overlay-alt:oklch(100.0% 0.0 89.88 / .05);
@@ -501,13 +503,13 @@ color-scheme:light;
   /* Même réduction à 4 niveaux que le bloc clair, mêmes raisons. Les deux blocs sombres portent
    la MÊME chaîne, remplacée d'un seul geste pour qu'ils ne puissent pas diverger. */
 --color-track:var(--color-background-primary);--color-row-active:var(--color-background-secondary);--color-nav-active:var(--color-background-secondary);
-  --color-background-info:oklch(39.16% 0.035 246.74);--color-background-danger:oklch(37.65% 0.045 30.17);--color-background-success:oklch(44.00% 0.035 150.63);--color-background-warning:oklch(42.79% 0.045 73.21);
+  --color-background-info:oklch(39.16% 0.035 278.34);--color-background-danger:oklch(37.65% 0.045 30.17);--color-background-success:oklch(44.00% 0.035 150.63);--color-background-warning:oklch(42.79% 0.045 73.21);
   /* 83.5% : même valeur et même motif que le bloc prefers-color-scheme ci-dessus (hiérarchie
      secondary/tertiary inversée en sombre). Les deux blocs doivent rester d'accord. */
   --color-text-primary:oklch(95.9% 0.0067 286.3);--color-text-secondary:oklch(83.5% 0.0067 286.3);--color-text-tertiary:oklch(79.0% 0.0067 286.3);--color-text-quaternary:oklch(76.72% 0.0067 286.3);
-  --color-text-info:oklch(79.21% 0.0789 242.05);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
+  --color-text-info:oklch(74.16% 0.1143 286.69);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
   --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
-  --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
+  --color-border-info:oklch(74.16% 0.1143 286.69 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
   --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(34.15% 0.045 278.34);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(37.40% 0.05 312.41);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(39.91% 0.045 2.52);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(43.48% 0.035 186.37);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
   --color-hue-blue-solid:oklch(62.43% 0.2056 255.49);--color-hue-indigo-solid:oklch(55.64% 0.2032 278.15);--color-hue-teal-solid:oklch(77.06% 0.1181 211.98);--color-hue-green-solid:oklch(75.56% 0.2082 146.98);--color-hue-orange-solid:oklch(78.24% 0.1711 67.22);--color-hue-yellow-solid:oklch(88.49% 0.1805 94.78);--color-hue-purple-solid:oklch(65.60% 0.2274 312.42);--color-hue-pink-solid:oklch(65.77% 0.2317 16.02);--color-hue-red-solid:oklch(66.33% 0.2236 28.29);--color-hue-gray-solid:oklch(68.12% 0.0073 286.21);
   --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);--overlay-alt:oklch(100.0% 0.0 89.88 / .05);

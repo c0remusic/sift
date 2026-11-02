@@ -117,11 +117,12 @@ la même encre à l'écran, alors que toute la hiérarchie des rangées (libell�
 comptes) repose sur ces deux crans. Valeurs depuis : sombre 95,9 / 83,5 / **79** / 76,72 ; clair
 31,16 / **41** / 46,15 / 50,30. En sombre c'est tertiary qui descend (76 tombait à 4,23:1 sur le
 plan de la file) ; en clair le sol à 86,22 % interdit de descendre tertiary, donc c'est secondary
-qui monte en contraste. AA (4,5:1) tenu sur les cinq écrans peuplés, sauf le bouton primaire
-(blanc sur `--color-accent-fill`, 3,65 sombre / 4,02 clair). Le DÉFAUT a été tranché le
-2026-08-19 — la fidélité au kit prime sur le plancher, l'accent n'est pas assombri ; la TEINTE de
-l'accent reste ouverte, #64 Décision 1, et c'est elle qui fixe ce contraste (triage de #61,
-2026-10-05).
+qui monte en contraste. AA (4,5:1) tenu sur les cinq écrans peuplés. Le bouton primaire (blanc
+sur `--color-accent-fill`) y est passé le 2026-11-02 par la TEINTE, pas par la valeur : l'accent
+devient le systemIndigo d'Apple (#64 Décision 1, tranchée par Antoine sur captures), 5,65:1 en
+clair et 5,06:1 en sombre, contre 4,02 / 3,65 pour le systemBlue d'avant. Le défaut du
+2026-08-19 tient toujours — une valeur d'Apple n'est pas assombrie. Toute la famille
+`--color-*-info` (focus, sélection, glyphes du rail) a suivi la même teinte.
 
 **Registre titre — exécuté le 2026-10-31 (#82, décision d'Antoine « 1 + 3 »).** La table macOS
 d'Apple retenue par #31/#34 sortait 20 et 32 de l'échelle au profit de 17/22/26 ; elle n'avait
