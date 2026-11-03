@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Icône d'app de Sift : la tuile charbon et le mark (brand/mark.svg, même géométrie). Source
+       vectorielle de src-tauri/icons/, qui n'en avait aucune (#64) : régénérer par
+       `npx tauri icon brand/icon.svg`. Tuile relevée au pixel sur src-tauri/icons/icon.png : pleine
+       taille, fond #1E1E22, coins en arc de rayon 230. -->
+  <rect width="1024" height="1024" rx="230" fill="#1e1e22"/>
+  <rect x="245.5" y="245.5" width="357" height="357" rx="84" fill="none" stroke="#f2c274" stroke-width="52" transform="rotate(-16 424 424)"/>
+  <rect x="394" y="394" width="409" height="409" rx="110" fill="#9fe0af"/>
+</svg>
