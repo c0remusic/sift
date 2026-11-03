@@ -1,19 +1,20 @@
-// Le modèle de l'écran Doublons (`frontend/doublons-model.ts`) : le plan, l'effet d'un groupe,
-// l'encre de différence, la copie comparée, « Préférer ce dossier », les filtres.
+// Le modèle de l'écran Doublons (`frontend/duplicates-model.ts`) : le plan, l'encre de différence,
+// « Préférer ce dossier », les filtres, et l'option B — Issue, conséquence d'un groupe, Lot.
 import { describe, expect, it } from "vitest";
 import {
-  compareTarget,
+  copyIssue,
   differingFields,
   filterCounts,
-  flattenRows,
-  groupEffect,
+  groupFormats,
+  groupOutcome,
   initialPlan,
   isKept,
-  planTotals,
+  lotSummary,
   preferFolder,
   rebasePlan,
-  restSummary,
+  recommendedCopy,
   ruleReason,
+  toggleIssue,
   unverifiedRekordbox,
   visibleGroups,
 } from "../frontend/duplicates-model";
@@ -57,7 +58,6 @@ const group = (id: number, copies: DupScreenCopy[], over: Partial<DupScreenGroup
   ...over,
 });
 
-const none = new Set<number>();
 
 describe("plan et effet d'un groupe", () => {
   it("le plan initial reprend les cases de la règle", () => {
@@ -84,52 +84,6 @@ describe("plan et effet d'un groupe", () => {
     expect(isKept(new Map([[2, false]]), tronquee)).toBe(false);
   });
 
-  it("l'effet compte ce qui part, sa taille et ce que Rekordbox perdrait", () => {
-    const g = group(1, [
-      copy(1, "C:/a/x.mp3", { keep: true }),
-      copy(2, "C:/b/x.wav", { size_bytes: 10, rekordbox: { state: "present", playlists: 3 } }),
-      copy(3, "C:/c/x.wav", { size_bytes: 5, missing: true }),
-    ]);
-    const e = groupEffect(g, initialPlan([g]), none);
-    expect(e.toTrash.map((c) => c.id)).toEqual([2]);
-    expect(e.bytes).toBe(10);
-    expect(e.rekordboxCopies).toBe(1);
-    expect(e.rekordboxPlaylists).toBe(3);
-    expect(e.inPlan).toBe(true);
-  });
-
-  it("un groupe À vérifier reste hors du plan tant qu'il n'est pas tranché à la main", () => {
-    const g = group(7, [copy(1, "C:/a/x.mp3", { keep: true }), copy(2, "C:/b/x.wav")], { to_check: true });
-    const plan = initialPlan([g]);
-    expect(groupEffect(g, plan, none).inPlan).toBe(false);
-    expect(groupEffect(g, plan, new Set([7])).inPlan).toBe(true);
-  });
-
-  it("jamais un groupe vidé de toutes ses copies", () => {
-    const g = group(1, [copy(1, "C:/a/x.mp3"), copy(2, "C:/b/x.wav")]);
-    const plan = new Map([
-      [1, false],
-      [2, false],
-    ]);
-    expect(groupEffect(g, plan, new Set([1])).inPlan).toBe(false);
-  });
-
-  it("le total respecte la case « Garder aussi les copies que Rekordbox joue »", () => {
-    const g = group(1, [
-      copy(1, "C:/a/x.mp3", { keep: true }),
-      copy(2, "C:/b/x.wav", { size_bytes: 10, rekordbox: { state: "present", playlists: 2 } }),
-      copy(3, "C:/c/x.aif", { size_bytes: 20 }),
-    ]);
-    const h = group(2, [copy(4, "C:/a/y.mp3", { keep: true }), copy(5, "C:/b/y.wav")], { to_check: true });
-    const plan = initialPlan([g, h]);
-    const garde = planTotals([g, h], plan, none, true);
-    expect(garde.copies.map((c) => c.id)).toEqual([3]);
-    expect(garde.bytes).toBe(20);
-    expect(garde.rekordboxCopies).toBe(1);
-    expect(garde.toCheckLeft).toBe(1);
-    const sans = planTotals([g, h], plan, none, false);
-    expect(sans.copies.map((c) => c.id)).toEqual([2, 3]);
-  });
 });
 
 describe("encre de différence", () => {
@@ -142,32 +96,6 @@ describe("encre de différence", () => {
     const g = group(1, [copy(1, "C:/a/x.mp3", { duration: 300.2 }), copy(2, "C:/b/x.mp3", { duration: 299.9 })]);
     expect(differingFields(g).has("duration")).toBe(false);
     expect(differingFields(g).has("folder")).toBe(true);
-  });
-});
-
-describe("copie comparée dans l'inspecteur", () => {
-  const g = group(1, [
-    copy(1, "C:/a/x.mp3", { keep: true }),
-    copy(2, "C:/b/x.flac"),
-    copy(3, "C:/c/x.wav"),
-  ]);
-  const plan = initialPlan([g]);
-
-  it("une copie non gardée se compare à la gardée", () => {
-    expect(compareTarget(g, 3, plan)?.id).toBe(1);
-  });
-
-  it("la gardée se compare à la meilleure des autres", () => {
-    expect(compareTarget(g, 1, plan)?.id).toBe(2);
-  });
-
-  it("le plan, pas la règle, dit quelle copie est gardée", () => {
-    const p = new Map(plan);
-    p.set(1, false);
-    p.set(3, true);
-    expect(compareTarget(g, 2, p)?.id).toBe(3);
-    // La copie que la règle gardait, décochée à la main : elle se compare à la gardée du PLAN.
-    expect(compareTarget(g, 1, p)?.id).toBe(3);
   });
 });
 
@@ -210,8 +138,9 @@ describe("Préférer ce dossier", () => {
     );
     const { plan, changed } = preferFolder([g], initialPlan([g]), "D:/vintage");
     expect(changed).toEqual([]);
+    // Option B : les deux copies d'un groupe À vérifier sont gardées par défaut, et y restent.
     expect(plan.get(1)).toBe(true);
-    expect(plan.get(2)).toBe(false);
+    expect(plan.get(2)).toBe(true);
   });
 });
 
@@ -232,15 +161,6 @@ describe("les copies que Rekordbox n'a pas pu vérifier", () => {
     expect(unverifiedRekordbox([])).toBeNull();
   });
 
-  it("une copie non vérifiée n'est pas gardée d'office : elle part avec le plan", () => {
-    const g = group(1, [
-      copy(1, "C:/a/x.wav", { keep: true }),
-      copy(2, "C:/b/x.mp3", { rekordbox: { state: "unverified", reason: "xml_snapshot" } }),
-    ]);
-    const t = planTotals([g], initialPlan([g]), none, true);
-    expect(t.copies.map((c) => c.id)).toEqual([2]);
-    expect(t.rekordboxCopies).toBe(0);
-  });
 });
 
 describe("le plan rebasé sur des groupes relus", () => {
@@ -335,28 +255,80 @@ describe("filtres, recherche, rangées", () => {
     expect(visibleGroups([a, b, c], "same_sound", "subzero")).toEqual([]);
   });
 
-  it("les rangées gardent un index continu, en-têtes compris", () => {
-    const rows = flattenRows([a, c]);
-    expect(rows.map((r) => `${r.kind}:${r.index}`)).toEqual([
-      "group:0",
-      "copy:1",
-      "copy:2",
-      "group:3",
-      "copy:4",
-      "copy:5",
+});
+
+describe("option B : Issue, conséquence, Lot", () => {
+  const trio = () =>
+    group(1, [
+      copy(1, "C:/a/x.mp3", { keep: true, size_bytes: 10 }),
+      copy(2, "C:/b/x.flac", { size_bytes: 20, rekordbox: { state: "present", playlists: 2 } }),
+      copy(3, "C:/c/x.mp3", { size_bytes: 30, tied_with_best: true }),
     ]);
+
+  it("un groupe À vérifier garde toutes ses copies par défaut", () => {
+    const g = group(1, [copy(1, "C:/a/x.mp3", { keep: true }), copy(2, "C:/b/x.mp3")], { to_check: true });
+    expect(groupOutcome(g, initialPlan([g])).trashed).toEqual([]);
   });
 
-  it("le résumé de repos", () => {
-    const groups = [
-      group(1, [copy(1, "C:/a/x.mp3", { keep: true }), copy(2, "C:/b/x.wav", { size_bytes: 7 })]),
-      group(3, [copy(3, "C:/a/y.mp3", { keep: true }), copy(4, "C:/b/y.wav")], { to_check: true }),
-    ];
-    const s = restSummary(groups, initialPlan(groups), none);
-    expect(s.groups).toBe(2);
-    expect(s.extraCopies).toBe(2);
-    expect(s.inPlan).toBe(1);
-    expect(s.bytes).toBe(7);
-    expect(s.toCheck).toBe(1);
+  it("l'Issue nomme chaque copie : gardée, corbeille, introuvable, tronquée", () => {
+    const g = group(1, [
+      copy(1, "C:/a/x.mp3", { keep: true }),
+      copy(2, "C:/b/x.mp3"),
+      copy(3, "C:/c/x.mp3", { missing: true }),
+      copy(4, "C:/d/x.mp3", { truncated: true }),
+    ]);
+    const plan = initialPlan([g]);
+    expect(g.copies.map((c) => copyIssue(c, plan))).toEqual(["kept", "trash", "missing", "truncated"]);
+  });
+
+  it("la conséquence numérote les colonnes et compte les octets et Rekordbox", () => {
+    const g = trio();
+    const o = groupOutcome(g, initialPlan([g]));
+    expect(o.kept).toEqual([1]);
+    expect(o.trashed).toEqual([2, 3]);
+    expect(o.bytes).toBe(50);
+    expect(o.rekordbox).toEqual([{ n: 2, playlists: 2 }]);
+  });
+
+  it("basculer garde une copie de plus, mais jamais la dernière gardée", () => {
+    const g = trio();
+    const plan = initialPlan([g]);
+    expect(toggleIssue(g, plan, 1)).toBe(false);
+    expect(groupOutcome(g, plan).kept).toEqual([1]);
+    expect(toggleIssue(g, plan, 3)).toBe(true);
+    expect(groupOutcome(g, plan).kept).toEqual([1, 3]);
+    expect(toggleIssue(g, plan, 1)).toBe(true);
+    expect(groupOutcome(g, plan).kept).toEqual([3]);
+  });
+
+  it("une copie introuvable ou tronquée ne se bascule pas", () => {
+    const g = group(1, [copy(1, "C:/a/x.mp3", { keep: true }), copy(2, "C:/b/x.mp3", { missing: true })]);
+    const plan = initialPlan([g]);
+    expect(toggleIssue(g, plan, 2)).toBe(false);
+    expect(copyIssue(g.copies[1], plan)).toBe("missing");
+  });
+
+  it("le curseur s'ouvre sur la première copie gardée", () => {
+    const g = group(1, [copy(1, "C:/a/x.mp3"), copy(2, "C:/b/x.mp3", { keep: true })]);
+    expect(recommendedCopy(g, initialPlan([g])).id).toBe(2);
+  });
+
+  it("les formats d'un groupe, sans doublon, dans l'ordre", () => {
+    expect(groupFormats(trio())).toBe("MP3, FLAC");
+  });
+
+  it("le Lot exclut les À vérifier et garde d'office ce que Rekordbox joue", () => {
+    const g = trio();
+    const doute = group(9, [copy(9, "C:/a/y.mp3", { keep: true }), copy(10, "C:/b/y.mp3")], { to_check: true });
+    const plan = initialPlan([g, doute]);
+    const avec = lotSummary([g, doute], plan, true);
+    expect(avec.excluded).toBe(1);
+    expect(avec.copies.map((c) => c.id)).toEqual([3]);
+    expect(avec.bytes).toBe(30);
+    expect(avec.rekordboxKept).toBe(1);
+    expect(avec.ties).toBe(1);
+    const sans = lotSummary([g, doute], plan, false);
+    expect(sans.copies.map((c) => c.id)).toEqual([2, 3]);
+    expect(sans.rekordboxKept).toBe(0);
   });
 });

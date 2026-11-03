@@ -27,10 +27,16 @@ function reglesCollantes(css: string): { selecteur: string; corps: string }[] {
 describe("éléments collants de la zone qui défile", () => {
   it("chacun se décale du padding de #content, en haut comme en bas", () => {
     const regles = reglesCollantes(CSS);
-    // Garde contre un test qui passerait à vide : les quatre collants connus au 2026-10-08.
-    expect(regles.length).toBeGreaterThanOrEqual(4);
+    // Garde contre un test qui passerait à vide : les quatre collants connus au 2026-10-08, moins la
+    // légende et l'ancre de feuille de l'ancienne table de Doublons, retirées avec elle le
+    // 2026-11-03, plus l'étiquette horizontale de sa grille.
+    expect(regles.length).toBeGreaterThanOrEqual(3);
     const fautifs = regles.filter(({ corps }) => {
       const decalages = [...corps.matchAll(/(?:^|;)\s*(top|bottom)\s*:\s*([^;]+)/g)];
+      // Un collant HORIZONTAL (`left`/`right` seuls) colle dans son propre défilement latéral —
+      // l'étiquette de la grille de Doublons, 2026-11-03 — et non au padding de #content : hors du
+      // raté que ce test garde.
+      if (decalages.length === 0 && /(?:^|;)\s*(left|right)\s*:/.test(corps)) return false;
       return decalages.length === 0 || decalages.some((d) => !/var\(--content-pad\b/.test(d[2]));
     });
     expect(fautifs.map((r) => r.selecteur)).toEqual([]);

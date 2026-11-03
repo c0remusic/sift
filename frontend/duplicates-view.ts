@@ -1,11 +1,13 @@
 // Doublons — destination du rail sous Revue (Tauri only). Spec : `docs/ui-specs/doublons.md`,
-// validée par Antoine le 2026-10-05 (direction hybride : le lieu et la table de A, la décision de
-// C, les niveaux de preuve de B).
+// option B décidée par Antoine le 2026-10-30 : une FILE DE TRI, la grammaire de Revue appliquée aux
+// groupes. La file à gauche, UN groupe ouvert au centre, ses copies en colonnes, et une rangée
+// « Issue » qui dit en toutes lettres ce que deviendra chaque copie. Entrée résout le groupe tout de
+// suite (annulable) et passe au suivant ; le mode Lot résout N groupes en une application confirmée.
 //
-// Une table de TOUS les groupes de la bibliothèque (file et Rangés), une case « Garder » par copie,
-// un plan, puis une seule application confirmée. L'inspecteur compare la copie ouverte à la copie
-// gardée — ou, quand c'est la gardée qu'on ouvre, à la meilleure des autres. Le modèle (plan,
-// effets, encre de différence, filtres) est pur et testé à part : `duplicates-model.ts`.
+// Ce qui ne change pas de l'hybride du 2026-10-05 : la formation des groupes, la preuve, la copie
+// recommandée (`pick_keep` v2, côté Rust), la corbeille par disque, la garde des copies Rekordbox.
+// Le modèle (plan, Issue, conséquence, résumé du Lot) est pur et testé à part :
+// `duplicates-model.ts` ; le markup aussi, exécuté par sa story : `duplicates-rows.ts`.
 import {
   applyDuplicatePlan,
   listDuplicateGroups,
@@ -22,47 +24,42 @@ import { esc, requireEl } from "./dom";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
 import { createVirtualList, type VirtualList } from "./list-virtual";
 import { isStaleViewRender, viewEpoch } from "./view-epoch";
-import { closeAside, mountBarActions, mountBarSearch, openAside } from "./toolbar";
+import { closeAside, mountBarActions, mountBarSearch } from "./toolbar";
 import { openContextMenu } from "./context-menu";
-import { revealAside } from "./chrome";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
 import { confirmTrashPlan } from "./confirm-modal";
-import { openReportInto, togglePlay } from "./report-view";
+import { openReportInto, playerPosition, resumeNextPlayer, togglePlay } from "./report-view";
 import { anchoredBelowPosition } from "./popover-position";
+import { pickNextAfter } from "./queue-next";
+import { clickedSelection } from "./queue-selection";
 import {
-  compareTarget,
   fileName,
   filterCounts,
-  flattenRows,
   GROUP_FILTERS,
+  groupOutcome,
   isKept,
   keepable,
+  lotSummary,
   parentDir,
-  planTotals,
   preferFolder,
   rebasePlan,
-  rekordboxPlaylists,
-  restSummary,
-  ruleReason,
+  recommendedCopy,
+  toggleIssue,
   unverifiedRekordbox,
   visibleGroups,
-  type DupRow,
   type GroupFilter,
   type Plan,
 } from "./duplicates-model";
 import {
-  dupRowHtml,
-  fmtDuration,
-  fmtKbps,
-  fmtKhz,
+  consequenceHtml,
   fmtSize,
-  groupEffectHtml,
-  headHtml,
+  gridHtml,
+  groupFactsHtml,
+  keepButtonLabel,
   legendHtml,
+  queueRowHtml,
   shortDir,
-  verdictView,
-  type DupRowView,
 } from "./duplicates-rows";
 import { T } from "./i18n/duplicates-view";
 
@@ -72,30 +69,27 @@ import { T } from "./i18n/duplicates-view";
 
 let groups: DupScreenGroup[] = [];
 let plan: Plan = new Map();
-/** Les groupes que l'utilisateur a modifiés : un groupe À vérifier n'entre dans l'application
- *  qu'une fois tranché à la main (spec § Interactions, « Geste de masse »). Dérivé de `decided` à
- *  chaque relecture des groupes (`rebasePlan`). */
-let touched = new Set<number>();
-/** Les copies des groupes que l'utilisateur a tranchés — la mémoire du plan, indexée par COPIE :
- *  l'id d'un groupe change quand sa copie de plus petit id part. */
+/** Les copies dont l'utilisateur a changé l'Issue : leur choix survit aux relectures des groupes
+ *  (`rebasePlan`), indexé par COPIE — l'id d'un groupe change quand sa copie de plus petit id part. */
 let decided = new Set<number>();
 let filter: GroupFilter = "all";
 let query = "";
-/** La copie ouverte dans l'inspecteur. */
-let openId: number | null = null;
+/** Le groupe ouvert dans la boîte, et la copie sous le curseur. */
+let openGid: number | null = null;
+let cursorId: number | null = null;
 let sources: Source[] = [];
-/** Les dossiers préférés pendant la session (« Préférer ce dossier »), pour le résumé de repos. */
-const preferred = new Map<string, number>();
+/** Mode Lot (spec § Colonne de file) : la sélection, et l'ancre de Maj+clic. */
+let lot = false;
+let lotSel = new Set<number>();
+let lotAnchor: number | null = null;
 let applying = false;
-/** Le lot de la dernière application, pour l'Annuler de son rapport d'échec partiel. */
+/** Le lot de la dernière application de masse, pour l'Annuler de son rapport d'échec partiel. */
 let lastBatch: string | null = null;
 let virtual: VirtualList | null = null;
-/** Les rangées de la table. Le MÊME tableau vit dans la liste virtualisée : il se modifie sur
- *  place, puis `virtual.render()` (list-virtual.ts garde la référence reçue). */
-const rows: DupRow[] = [];
-/** Les écouteurs de la table vivent sur `#content`, PERMANENT : posés une fois, comme Écartés
- *  (revue du 2026-10-05 : posés à chaque rendu, ils s'empilaient). */
-let tableWired = false;
+/** Les groupes de la file. Le MÊME tableau vit dans la liste virtualisée : il se modifie sur place,
+ *  puis `virtual.render()` (list-virtual.ts garde la référence reçue). */
+const rows: DupScreenGroup[] = [];
+let wired = false;
 let keysWired = false;
 /** La copie à ouvrir au prochain rendu : posée par `showDuplicateGroupOf` (Revue). */
 let pendingFocus: number | null = null;
@@ -110,7 +104,7 @@ export function registerDupsNavigator(fn: () => void): void {
 
 /** Ouvre l'écran Doublons sur la copie `trackId` : le bandeau doublon de Revue et le menu d'une
  *  ligne badgée y mènent (revue.md, amendement du 2026-10-05). Filtre et recherche repartent de
- *  zéro, pour que la copie soit dans la table. */
+ *  zéro, pour que son groupe soit dans la file. */
 export function showDuplicateGroupOf(trackId: number): void {
   pendingFocus = trackId;
   filter = "all";
@@ -128,48 +122,20 @@ export function installDuplicatesLinks(): void {
   });
 }
 
-/** Ce que le rendu des rangées lit de l'écran (`duplicates-rows.ts`). */
-function rowView(): DupRowView {
-  return { plan, touched, sources, openId };
+function visible(): DupScreenGroup[] {
+  return visibleGroups(groups, filter, query);
 }
 
-/** Recalcule les rangées visibles (filtre, recherche) dans le MÊME tableau, puis remonte la
- *  fenêtre de la liste. Fréquence : une frappe dans la recherche (rafale de 5 à 10/s en saisie
- *  rapide), un choix de filtre, un rendu doux après `queue:changed`. Le jeu de rangées change
- *  réellement, donc la fenêtre se remonte ; la barre se MUTE (`paintBar`), l'inspecteur ne bouge
- *  pas — son résumé ne dépend ni du filtre ni de la recherche. */
-function refreshTable(): void {
-  const visible = visibleGroups(groups, filter, query);
-  rows.length = 0;
-  rows.push(...flattenRows(visible));
-  virtual?.render();
-  paintBar(visible.length);
+function findGroup(gid: number | null): DupScreenGroup | null {
+  return gid == null ? null : (groups.find((g) => g.id === gid) ?? null);
 }
 
-/** Un geste sur le plan (case, Entrée, ⌫, menu, Préférer) : les rangées MONTÉES du groupe se
- *  patchent en place — la case garde son nœud, donc son focus — et l'en-tête reçoit son effet
- *  recalculé. Les rangées hors fenêtre se peindront avec le plan courant à leur montage. */
-function patchGroupRows(gid: number): void {
-  const g = groups.find((x) => x.id === gid);
-  if (!g) return;
-  const v = rowView();
-  document.querySelectorAll<HTMLElement>(`.lr[data-dupgroup="${gid}"]`).forEach((r) => {
-    if (r.dataset.dupcopy) {
-      const c = g.copies.find((x) => x.id === Number(r.dataset.dupcopy));
-      if (!c) return;
-      const kept = isKept(plan, c);
-      const ck = r.querySelector<HTMLInputElement>("[data-dupkeep]");
-      if (ck && ck.checked !== kept) ck.checked = kept;
-      r.querySelector(".sift-dups-rkb")?.classList.toggle("sift-dups-warn", !kept);
-      return;
-    }
-    const eff = r.querySelector<HTMLElement>(".sift-dups-effect");
-    if (eff) eff.outerHTML = groupEffectHtml(g, v);
-  });
+function groupOfCopy(copyId: number): DupScreenGroup | null {
+  return groups.find((g) => g.copies.some((c) => c.id === copyId)) ?? null;
 }
 
 // ---------------------------------------------------------------------------
-// Barre
+// Barre et tête de file
 // ---------------------------------------------------------------------------
 
 function filterLabel(f: GroupFilter): string {
@@ -190,43 +156,47 @@ function filterLabel(f: GroupFilter): string {
   }
 }
 
-/** La barre : MONTÉE une fois par passage sur l'écran (le routeur la vide à chaque navigation),
- *  puis MUTÉE — compte, valeur du filtre, libellé et état du bouton d'application. Appelée à chaque
- *  frappe de recherche et à chaque geste sur le plan : un remontage par frappe recréerait les deux
- *  boutons pour changer un nombre. */
-function paintBar(visibleCount: number): void {
+/** Le compte de la barre (« N groupes », ou « N sélectionnés » en mode Lot, comme Revue) et la
+ *  recherche, montée une fois par passage sur l'écran (le routeur vide la barre à chaque
+ *  navigation). Fréquence : chaque frappe de recherche, chaque geste de Lot — le compte se MUTE. */
+function paintBar(): void {
   const t = T();
   const countEl = document.getElementById("sift-tb-count");
-  if (countEl) countEl.textContent = t.groups(visibleCount);
-  // Le plan tel que la table le montre — copies que Rekordbox joue comprises quand l'utilisateur
-  // les a décochées —, comme `applyPlan` le teste : grisé ici et Ctrl+Entrée refusé, c'est la même
-  // règle. La confirmation propose ensuite de garder celles que Rekordbox joue.
-  const n = planTotals(visibleGroups(groups, filter, query), plan, touched, false).copies.length;
-  let apply = document.querySelector<HTMLButtonElement>('[data-dups="apply"]');
-  if (!apply) {
-    mountBarActions(
-      `<button data-dups="filterpop" class="sift-bib-facet-btn" aria-haspopup="true" aria-expanded="false">` +
-        `<span class="sift-bib-facet-kind">${t.groupsMenu}</span>` +
-        `<span class="sift-bib-facet-val"></span>` +
-        `<i class="ti ti-chevron-down" aria-hidden="true"></i></button>` +
-        `<button data-dups="apply" class="sift-secondary-trash sift-bar-btn"></button>`,
-    );
+  if (countEl) {
+    countEl.textContent = lot ? t.selected(lotSel.size) : t.groups(visible().length);
+    countEl.classList.toggle("sift-tb-count-lot", lot);
+  }
+  if (!document.getElementById("sift-tb-search")?.firstChild) {
     mountBarSearch({
       placeholder: t.search,
       ariaLabel: t.search,
       value: query,
       onInput: (v) => {
         query = v;
-        refreshTable();
+        refreshQueue();
       },
     });
-    apply = document.querySelector<HTMLButtonElement>('[data-dups="apply"]');
   }
-  const val = document.querySelector<HTMLElement>('[data-dups="filterpop"] .sift-bib-facet-val');
-  if (val) val.textContent = filterLabel(filter);
-  if (apply) {
-    apply.textContent = t.apply(n);
-    apply.disabled = n === 0 || applying;
+}
+
+/** La tête de file : le pulldown « Tous ▾ » à gauche, « Sélectionner » / « Terminé » à droite.
+ *  Posée vide par le shell, remplie une fois, puis seuls les libellés se mutent. */
+function paintQueueHead(): void {
+  const head = document.querySelector<HTMLElement>("#dqcol .sift-qhead");
+  if (!head) return;
+  const t = T();
+  if (!head.firstChild) {
+    head.innerHTML =
+      `<button type="button" class="sift-qfacet-btn" data-dups="filterpop" aria-haspopup="true" aria-expanded="false">` +
+      `<span class="sift-qfacet-label"></span><i class="ti ti-chevron-down" aria-hidden="true"></i></button>` +
+      `<button type="button" class="sift-qselect-btn" data-dups="lot"></button>`;
+  }
+  const label = head.querySelector<HTMLElement>(".sift-qfacet-label");
+  if (label) label.textContent = filterLabel(filter);
+  const sel = head.querySelector<HTMLElement>('[data-dups="lot"]');
+  if (sel) {
+    sel.textContent = lot ? t.selectDone : t.select;
+    sel.setAttribute("aria-pressed", String(lot));
   }
 }
 
@@ -245,8 +215,8 @@ function closeFilterPop(): void {
   }
 }
 
-/** Le pop-up « Groupes » : un choix exclusif, coché, avec les comptes — même composant que la
- *  facette de Rangés (`.sift-facet-pop`, `.sift-menu-*`, HIG « Pop-up buttons »). */
+/** Le menu « Tous ▾ » : un choix exclusif, coché, avec les comptes — même composant que la facette
+ *  de Rangés (`.sift-facet-pop`, `.sift-menu-*`, HIG « Pop-up buttons »). */
 function openFilterPop(btn: HTMLElement): void {
   closeFilterPop();
   const counts = filterCounts(groups);
@@ -284,12 +254,12 @@ function openFilterPop(btn: HTMLElement): void {
     if (!b) return;
     filter = b.dataset.dupsfilter as GroupFilter;
     closeFilterPop();
-    refreshTable();
+    refreshQueue();
   });
   const dismiss = (e: Event) => {
     if (e instanceof KeyboardEvent && e.key !== "Escape") return;
-    // Le déclencheur se ferme lui-même au clic (`wireTable`) : fermer ici sur son `mousedown` le
-    // ferait rouvrir aussitôt par le `click` qui suit.
+    // Le déclencheur se ferme lui-même au clic : fermer ici sur son `mousedown` le ferait rouvrir
+    // aussitôt par le `click` qui suit.
     const target = e.target as HTMLElement | null;
     if (e.type === "mousedown" && (pop.contains(target) || target?.closest?.('[data-dups="filterpop"]'))) return;
     closeFilterPop();
@@ -300,376 +270,409 @@ function openFilterPop(btn: HTMLElement): void {
 }
 
 // ---------------------------------------------------------------------------
-// Inspecteur
+// File
 // ---------------------------------------------------------------------------
 
-function renderRest(): void {
-  const host = openAside();
-  if (!host) return;
-  const t = T();
-  const s = restSummary(groups, plan, touched);
-  const row = (label: string, value: string) => `<dt>${label}</dt><dd>${value}</dd>`;
-  host.innerHTML =
-    `<div class="col-h">${t.restTitle}</div>` +
-    `<div class="sift-sel-count">${t.groups(s.groups)}</div>` +
-    `<dl class="sift-sel-rows">` +
-    row(t.restExtra, String(s.extraCopies)) +
-    row(t.restInPlan, String(s.inPlan)) +
-    row(t.restRecoverable, fmtSize(s.bytes)) +
-    `</dl>` +
-    `<dl class="sift-sel-rows sift-dups-rest-h">` +
-    row(t.filterIdentical, String(s.identical)) +
-    row(t.filterSameSound, String(s.sameSound)) +
-    row(t.filterSameName, String(s.sameName)) +
-    `</dl>` +
-    `<dl class="sift-sel-rows sift-dups-rest-h">` +
-    row(t.restToCheck, String(s.toCheck)) +
-    row(t.filterRekordbox, String(s.withRekordbox)) +
-    `</dl>` +
-    `<div class="col-h sift-dups-rest-h">${t.restRuleTitle}</div>` +
-    `<div class="sift-ec-rule">${t.restRule}</div>` +
-    (preferred.size
-      ? `<div class="col-h sift-dups-rest-h">${t.restPreferred}</div><dl class="sift-sel-rows">` +
-        [...preferred.entries()].map(([dir, n]) => row(esc(fileName(dir)), t.groups(n))).join("") +
-        `</dl>`
-      : "");
+/** Recalcule les groupes visibles (filtre, recherche) dans le MÊME tableau, puis remonte la fenêtre
+ *  de la liste. Fréquence : une frappe dans la recherche (rafale de 5 à 10/s en saisie rapide), un
+ *  choix de filtre, une relecture des groupes. Le groupe ouvert reste ouvert même filtré : la boîte
+ *  ne se vide pas sous les yeux pendant une frappe. */
+function refreshQueue(): void {
+  rows.length = 0;
+  rows.push(...visible());
+  virtual?.render();
+  paintQueueHead();
+  paintBar();
 }
 
-function findCopy(id: number): { g: DupScreenGroup; c: DupScreenCopy } | null {
-  for (const g of groups) {
-    const c = g.copies.find((x) => x.id === id);
-    if (c) return { g, c };
-  }
-  return null;
+/** Repeint la fenêtre montée de la file : la ligne active, les cases du Lot. Fréquence : ↑ ↓
+ *  maintenus (~30/s), un clic de Lot — la liste virtualisée ne réécrit que sa fenêtre. */
+function repaintQueue(): void {
+  virtual?.render();
 }
 
-function whySentence(g: DupScreenGroup, kept: DupScreenCopy, other: DupScreenCopy): string {
-  const t = T();
-  const fmt = kept.format.toUpperCase();
-  switch (ruleReason(g, kept, other)) {
-    case "missing":
-      return t.whyMissing;
-    case "truncated":
-      return t.whyTruncated;
-    case "verdict":
-      return t.whyVerdict(fmt);
-    case "verdict_grey":
-      return t.whyVerdictGrey(fmt);
-    case "lossless":
-      return t.whyLossless(fmt);
-    case "bitrate":
-      return t.whyBitrate(fmt);
-    case "rate":
-      return t.whyRate(fmt);
-    case "aiff":
-      return t.whyAiff;
-    case "tie":
-      return t.whyTie;
-    case "user":
-      return t.whyUser;
-    case "rekordbox":
-      return t.whyRekordbox;
-  }
+function scrollGroupIntoView(gid: number): void {
+  const ql = document.getElementById("dql");
+  const idx = rows.findIndex((g) => g.id === gid);
+  const first = ql?.querySelector<HTMLElement>(".qi");
+  if (!ql || idx < 0) return;
+  const rowH = first?.getBoundingClientRect().height || 46;
+  const top = idx * rowH;
+  if (top < ql.scrollTop) ql.scrollTop = top;
+  else if (top + rowH > ql.scrollTop + ql.clientHeight) ql.scrollTop = top + rowH - ql.clientHeight;
 }
 
-function linkSentence(g: DupScreenGroup, a: DupScreenCopy, b: DupScreenCopy): string {
-  const t = T();
-  const link = g.links.find((l) => (l.a === a.id && l.b === b.id) || (l.a === b.id && l.b === a.id));
-  if (link?.kind === "identical") return t.linkIdentical;
-  if (link?.kind === "same_sound") return t.linkSameSound((link.similarity ?? 1).toFixed(2).replace(".", t.decimalSep));
-  return a.name_key && a.name_key === b.name_key ? t.linkSameName : "";
-}
+// ---------------------------------------------------------------------------
+// La boîte du groupe ouvert
+// ---------------------------------------------------------------------------
 
-function compareHtml(g: DupScreenGroup, c: DupScreenCopy, other: DupScreenCopy): string {
-  const t = T();
-  const openedKept = isKept(plan, c);
-  const what = `${other.format.toUpperCase()} · ${shortDir(other, sources)}`;
-  const sub = openedKept ? t.comparedBestOther(g.copies.length - 1) : t.comparedKept;
-  const link = linkSentence(g, c, other);
-  const verdictCell = (x: DupScreenCopy) => {
-    const v = verdictView(x.verdict);
-    return `<span class="${v.cls}"><span class="sift-lib-verdict-dot" aria-hidden="true"></span>${v.word}</span>`;
-  };
-  const ident = (x: DupScreenCopy) => (x.discogs_release_id ? t.identified(x.year) : t.notIdentified);
-  const rkb = (x: DupScreenCopy) => {
-    const p = rekordboxPlaylists(x);
-    if (p != null) return t.playlists(p);
-    if (x.rekordbox.state === "unverified") return t.rekordboxUnverifiedShort;
-    return x.rekordbox.state === "unknown" ? t.rekordboxUnknownShort : t.rekordboxAbsent;
-  };
-  const line = (label: string, a: string, b: string) =>
-    `<span class="sift-dups-cmp-l">${label}</span><span class="sift-dups-cmp-v">${a}</span><span class="sift-dups-cmp-v">${b}</span>`;
-  const keptOne = openedKept ? c : other;
-  const otherOne = openedKept ? other : c;
-  return (
-    `<div class="sift-dups-cmp-sec">` +
-    `<div class="col-h">${esc(t.comparedTo(what))}</div>` +
-    `<div class="sift-dups-cmp-proof">${esc([sub, link].filter(Boolean).join(" · "))}</div>` +
-    `<div class="sift-dups-cmp">` +
-    `<span></span><span class="sift-dups-cmp-h">${t.thisCopy}</span><span class="sift-dups-cmp-h">${esc(other.format.toUpperCase())}</span>` +
-    line(t.rowVerdict, verdictCell(c), verdictCell(other)) +
-    line(t.rowCutoff, fmtKhz(c.cutoff_hz), fmtKhz(other.cutoff_hz)) +
-    line(t.rowFormat, esc(c.format.toUpperCase()), esc(other.format.toUpperCase())) +
-    line(t.rowBitrate, fmtKbps(c.bitrate), fmtKbps(other.bitrate)) +
-    line(t.rowRate, fmtKhz(c.sample_rate), fmtKhz(other.sample_rate)) +
-    line(t.rowDuration, fmtDuration(c.duration), fmtDuration(other.duration)) +
-    line(t.rowSize, c.size_bytes == null ? "—" : fmtSize(c.size_bytes), other.size_bytes == null ? "—" : fmtSize(other.size_bytes)) +
-    line(t.rowFolder, esc(shortDir(c, sources)), esc(shortDir(other, sources))) +
-    line(t.rowIdent, ident(c), ident(other)) +
-    line(t.rowRekordbox, rkb(c), rkb(other)) +
-    `</div>` +
-    `<div class="sift-dups-why">${esc(whySentence(g, keptOne, otherOne))}</div>` +
-    `</div>`
-  );
-}
-
-/** La copie dont le lecteur est monté dans la zone D, et le minuteur qui le monte. Le lecteur
- *  (`openReportInto`) détruit le précédent, relance l'analyse en IPC et coupe l'écoute : il ne se
- *  monte qu'une fois la copie ouverte STABLE depuis 150 ms (même délai que l'ouverture d'une piste
- *  de la file). ↑ ↓ maintenus (auto-répétition ~30/s) ne repeignent donc que la comparaison. */
+/** La copie dont le lecteur est monté, et le minuteur qui le monte. Le lecteur (`openReportInto`)
+ *  détruit le précédent et relance l'analyse en IPC : il ne se monte qu'une fois le curseur STABLE
+ *  depuis 150 ms (même délai que l'ouverture d'une piste de la file). ← → maintenus ne bougent donc
+ *  que le fond de la colonne. */
 let reportFor: number | null = null;
 let reportTimer: ReturnType<typeof setTimeout> | undefined;
 const REPORT_DELAY_MS = 150;
 
-/** Ouvre `id` dans la zone D : l'ossature (lecteur, comparaison, diagnostic) se pose UNE fois, puis
- *  seule la comparaison se repeint ; le lecteur suit, coalescé. */
-function renderDetail(id: number): void {
-  const host = openAside();
-  if (!host || !findCopy(id)) return;
-  if (!host.querySelector(".sift-dups-detail")) {
-    host.innerHTML =
-      `<div class="lib-detail-stack sift-dups-detail">` +
-      `<div class="lib-report"></div>` +
-      `<div class="sift-dups-cmp-slot"></div>` +
-      `<div class="lib-diag"></div>` +
-      `<div class="lib-verdict"></div>` +
-      `</div>`;
+/** La copie à faire jouer : celle du curseur, sauf une copie introuvable — `openReportInto`
+ *  lancerait l'analyse, et l'échec d'un fichier disparu SUPPRIME sa ligne en base (`FILE_GONE`).
+ *  L'écran la montre « Introuvable » et ne l'envoie jamais ; il ne la retire pas en douce. */
+function playableCopy(g: DupScreenGroup): DupScreenCopy | null {
+  const c = g.copies.find((x) => x.id === cursorId);
+  if (c && !c.missing) return c;
+  return g.copies.find((x) => !x.missing) ?? null;
+}
+
+/** Monte la boîte du groupe ouvert (ou le résumé du Lot). Le lecteur pose la coque — en-tête,
+ *  rangée d'audition, et les deux emplacements `#filbox-settings` / `#filbox-foot` que la boîte de
+ *  Revue réserve (`report-view.ts::playerRowHtml`) ; la grille et le pied s'y peignent. */
+function paintBox(): void {
+  const mid = document.getElementById("dmid");
+  if (!mid) return;
+  if (lot) {
+    clearTimeout(reportTimer);
     reportFor = null;
+    paintLotSummary(mid);
+    return;
   }
-  paintCompare();
-  if (reportFor !== id) scheduleReport(id);
+  const g = findGroup(openGid);
+  if (!g) {
+    mid.innerHTML = "";
+    reportFor = null;
+    return;
+  }
+  const c = playableCopy(g);
+  if (!mid.querySelector(".sift-dupb") || reportFor == null || !c) {
+    mountReport(mid, g, c);
+  } else if (c.id !== reportFor) {
+    scheduleReport();
+  }
+  paintSlots();
 }
 
-/** Repeint la seule comparaison de la copie ouverte : un geste sur le plan change la copie
- *  comparée et la phrase de la règle, jamais le lecteur. Fréquence : ↑ ↓ maintenus, ~30/s en
- *  auto-répétition — coalescé à une image (`requestAnimationFrame`), la comparaison peinte est
- *  celle de la copie ouverte quand l'image part. */
-let compareFrame = 0;
-function paintCompare(): void {
-  if (compareFrame) return;
-  compareFrame = requestAnimationFrame(() => {
-    compareFrame = 0;
-    const slot = document.querySelector<HTMLElement>("#sift-aside .sift-dups-cmp-slot");
-    const found = openId != null ? findCopy(openId) : null;
-    if (!slot || !found) return;
-    const other = compareTarget(found.g, found.c.id, plan);
-    slot.innerHTML = other ? compareHtml(found.g, found.c, other) : "";
-  });
+function mountReport(mid: HTMLElement, g: DupScreenGroup, c: DupScreenCopy | null): void {
+  const t = T();
+  mid.innerHTML =
+    `<div class="sift-dupb">` +
+    `<div class="sift-dupb-report"></div>` +
+    `<div class="sift-dupb-hidden" hidden><div class="sift-dupb-verdict"></div><div class="sift-dupb-diag"></div></div>` +
+    `</div>`;
+  const reportEl = requireEl<HTMLElement>(".sift-dupb-report", "mountReport", mid);
+  const verdictEl = requireEl<HTMLElement>(".sift-dupb-verdict", "mountReport", mid);
+  const diagEl = requireEl<HTMLElement>(".sift-dupb-diag", "mountReport", mid);
+  reportFor = c?.id ?? null;
+  if (!c) {
+    // Toutes les copies sont introuvables : pas de lecteur, mais la grille et le pied restent.
+    reportEl.innerHTML = `<div class="sift-filbox-settings" id="filbox-settings"></div><div class="sift-filbox-foot" id="filbox-foot"></div>`;
+    return;
+  }
+  void openReportInto(
+    reportEl,
+    c.path,
+    verdictEl,
+    {
+      showAnalysisFailure: false,
+      title: [g.title, g.version ? `(${g.version})` : ""].filter(Boolean).join(" "),
+      subtitle: t.artistCopies(g.artist ?? "", g.copies.length),
+    },
+    diagEl,
+  );
 }
 
-function scheduleReport(id: number): void {
+/** ← → maintenus : seul le fond de colonne suit à chaque appui ; le lecteur se remonte sur la
+ *  nouvelle copie quand le curseur s'arrête, à la position où en était l'écoute (A/B). */
+function scheduleReport(): void {
   clearTimeout(reportTimer);
   reportTimer = setTimeout(() => {
-    const host = document.getElementById("sift-aside");
-    const found = findCopy(id);
-    if (openId !== id || !host || !found || !host.querySelector(".sift-dups-detail")) return;
-    const reportEl = requireEl<HTMLElement>(".lib-report", "scheduleReport", host);
-    const diagEl = requireEl<HTMLElement>(".lib-diag", "scheduleReport", host);
-    const verdictEl = requireEl<HTMLElement>(".lib-verdict", "scheduleReport", host);
-    reportFor = id;
-    // Une copie absente ne s'ouvre pas dans le lecteur : `openReportInto` lancerait l'analyse, et
-    // l'échec d'un fichier disparu SUPPRIME sa ligne en base (`FILE_GONE`). L'écran la montre
-    // « introuvable » et ne l'envoie jamais ; il ne la retire pas en douce.
-    if (found.c.missing) {
-      reportEl.textContent = "";
-      diagEl.textContent = "";
-      verdictEl.textContent = "";
-      return;
-    }
-    const { g, c } = found;
-    void openReportInto(
-      reportEl,
-      c.path,
-      verdictEl,
-      {
-        showAnalysisFailure: false,
-        title: [g.title, g.version ? `(${g.version})` : ""].filter(Boolean).join(" "),
-        subtitle: g.artist ?? undefined,
-      },
-      diagEl,
-    );
+    const mid = document.getElementById("dmid");
+    const g = findGroup(openGid);
+    if (!mid || !g || lot) return;
+    const c = playableCopy(g);
+    if (!c || c.id === reportFor) return;
+    resumeNextPlayer(playerPosition());
+    mountReport(mid, g, c);
+    paintSlots();
   }, REPORT_DELAY_MS);
 }
 
-function openCopy(id: number | null, scroll = false): void {
-  openId = id;
-  document
-    .querySelectorAll<HTMLElement>(".lr[data-dupcopy]")
-    .forEach((r) => {
-      const on = Number(r.dataset.dupcopy) === id;
-      r.classList.toggle("cur", on);
-      r.setAttribute("aria-selected", String(on));
-    });
-  if (id == null) {
-    clearTimeout(reportTimer);
-    reportFor = null;
-    renderRest();
-    return;
-  }
-  if (scroll) scrollRowIntoView(id);
-  renderDetail(id);
+/** Peint la grille et le pied dans les emplacements de la boîte. Fréquence : un geste sur l'Issue
+ *  (clic, G), un remontage du lecteur — jamais en rafale : ← → ne passent pas par ici
+ *  (`moveCursor` mute les classes). */
+function paintSlots(): void {
+  const g = findGroup(openGid);
+  const settings = document.querySelector<HTMLElement>("#dmid #filbox-settings");
+  const foot = document.querySelector<HTMLElement>("#dmid #filbox-foot");
+  if (!g || !settings || !foot || cursorId == null) return;
+  const t = T();
+  const scroll = settings.querySelector<HTMLElement>(".sift-dupb-scroll")?.scrollLeft ?? 0;
+  settings.innerHTML = groupFactsHtml(g) + gridHtml(g, plan, cursorId, sources) + consequenceHtml(g, plan);
+  const sc = settings.querySelector<HTMLElement>(".sift-dupb-scroll");
+  if (sc) sc.scrollLeft = scroll;
+  foot.innerHTML =
+    `<span class="sift-rail-kbd">${legendHtml()}</span>` +
+    `<div class="sift-rail-abtns">` +
+    `<button type="button" class="sift-baction" data-dups="notdups">${t.notDupsButton}</button>` +
+    `<button type="button" class="sift-ranger-btn" data-dups="keep">${esc(keepButtonLabel(g, plan))}</button>` +
+    `</div>`;
 }
 
-function scrollRowIntoView(id: number): void {
-  const content = document.getElementById("content");
-  const idx = rows.findIndex((r) => r.kind === "copy" && r.copy.id === id);
-  const first = document.querySelector<HTMLElement>(".lr[data-dupcopy], .lr[data-dupgroup]");
-  const host = document.getElementById("sift-dups-list");
-  if (!content || !host || idx < 0 || !first) return;
-  const rowH = first.getBoundingClientRect().height || 32;
-  // Position de la liste DANS la zone défilante, mesurée par les rectangles : `offsetTop` se lit
-  // contre le plus proche ancêtre positionné, qui n'est pas `#content` (même piège évité par
-  // `list-virtual.ts`).
-  const listTop = host.getBoundingClientRect().top - content.getBoundingClientRect().top + content.scrollTop;
-  const top = listTop + idx * rowH;
-  if (top < content.scrollTop + rowH) content.scrollTop = Math.max(0, top - rowH);
-  else if (top + rowH > content.scrollTop + content.clientHeight - 2 * rowH) {
-    content.scrollTop = top + 3 * rowH - content.clientHeight;
-  }
+/** Pose le curseur sur une copie : la colonne prend le fond de sélection tout de suite, le lecteur
+ *  suit une fois le curseur stable (`scheduleReport`). */
+function moveCursor(id: number): void {
+  const g = findGroup(openGid);
+  if (!g || !g.copies.some((c) => c.id === id)) return;
+  cursorId = id;
+  document.querySelectorAll<HTMLElement>("#dmid [data-dupscol]").forEach((el) => {
+    el.classList.toggle("cur", Number(el.dataset.dupscol) === id);
+  });
+  const col = document.querySelector<HTMLElement>(`#dmid .sift-dupb-head[data-dupscol="${id}"]`);
+  col?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  scheduleReport();
+}
+
+function stepCursor(delta: 1 | -1): void {
+  const g = findGroup(openGid);
+  if (!g) return;
+  const i = g.copies.findIndex((c) => c.id === cursorId);
+  const next = g.copies[Math.min(g.copies.length - 1, Math.max(0, i + delta))];
+  if (next) moveCursor(next.id);
+}
+
+/** Ouvre un groupe : curseur sur la copie recommandée (ou sur `focus`, venue de Revue). */
+function openGroup(gid: number | null, focus: number | null = null): void {
+  openGid = gid;
+  const g = findGroup(gid);
+  cursorId = g ? (focus != null && g.copies.some((c) => c.id === focus) ? focus : recommendedCopy(g, plan).id) : null;
+  reportFor = null;
+  repaintQueue();
+  if (gid != null) scrollGroupIntoView(gid);
+  paintBox();
+}
+
+function stepGroup(delta: 1 | -1): void {
+  if (!rows.length) return;
+  const i = rows.findIndex((g) => g.id === openGid);
+  const next = i < 0 ? rows[0] : rows[Math.min(rows.length - 1, Math.max(0, i + delta))];
+  if (next && next.id !== openGid) openGroup(next.id);
 }
 
 // ---------------------------------------------------------------------------
-// Gestes sur le plan
+// Gestes sur l'Issue
 // ---------------------------------------------------------------------------
 
-/** Le groupe est tranché par l'utilisateur : toutes ses copies gardent leur case aux relectures. */
-function touch(g: DupScreenGroup): void {
-  touched.add(g.id);
-  for (const c of g.copies) decided.add(c.id);
+function toggleCopy(id: number): void {
+  const g = findGroup(openGid);
+  if (!g || !toggleIssue(g, plan, id)) return;
+  decided.add(id);
+  paintSlots();
 }
 
-function setKeep(g: DupScreenGroup, c: DupScreenCopy, keep: boolean): void {
-  if (!keepable(c)) return;
-  plan.set(c.id, keep);
-  touch(g);
+function keepOnly(g: DupScreenGroup, id: number): void {
+  const c = g.copies.find((x) => x.id === id);
+  if (!c || !keepable(c)) return;
+  for (const x of g.copies) {
+    if (!keepable(x)) continue;
+    plan.set(x.id, x.id === id);
+    decided.add(x.id);
+  }
+  paintSlots();
 }
 
-function keepOnly(id: number): void {
-  const found = findCopy(id);
-  if (!found || !keepable(found.c)) return;
-  for (const x of found.g.copies) setKeep(found.g, x, x.id === id);
-  afterPlanChange([found.g.id]);
-}
-
-function dontKeep(id: number): void {
-  const found = findCopy(id);
-  if (!found) return;
-  setKeep(found.g, found.c, false);
-  afterPlanChange([found.g.id]);
-}
-
-/** Après un geste sur le plan : les rangées des groupes touchés se patchent, la barre se mute, et
- *  l'inspecteur ne repeint que ce qui dépend du plan (le résumé au repos, ou la comparaison). */
-function afterPlanChange(gids: readonly number[]): void {
-  for (const gid of gids) patchGroupRows(gid);
-  paintBar(visibleGroups(groups, filter, query).length);
-  if (openId == null) renderRest();
-  else paintCompare();
-}
-
-function moveOpen(delta: 1 | -1): void {
-  const copies = rows.filter((r): r is Extract<DupRow, { kind: "copy" }> => r.kind === "copy");
-  if (!copies.length) return;
-  const i = copies.findIndex((r) => r.copy.id === openId);
-  const next = i < 0 ? (delta > 0 ? 0 : copies.length - 1) : Math.min(copies.length - 1, Math.max(0, i + delta));
-  openCopy(copies[next].copy.id, true);
+function keepAlso(g: DupScreenGroup, id: number): void {
+  const c = g.copies.find((x) => x.id === id);
+  if (!c || !keepable(c) || isKept(plan, c)) return;
+  plan.set(id, true);
+  decided.add(id);
+  paintSlots();
 }
 
 function openMenu(x: number, y: number, g: DupScreenGroup, c: DupScreenCopy): void {
   const t = T();
-  const kept = isKept(plan, c);
   openContextMenu(x, y, [
-    { label: t.keepOnly, onPick: keepable(c) ? () => keepOnly(c.id) : undefined },
-    {
-      label: t.keepAlso,
-      onPick:
-        keepable(c) && !kept
-          ? () => {
-              setKeep(g, c, true);
-              afterPlanChange([g.id]);
-            }
-          : undefined,
-    },
+    { label: t.keepOnly, onPick: keepable(c) ? () => keepOnly(g, c.id) : undefined },
+    { label: t.keepAlso, onPick: keepable(c) && !isKept(plan, c) ? () => keepAlso(g, c.id) : undefined },
     {
       label: t.preferFolder,
       onPick: keepable(c)
         ? () => {
-            const dir = parentDir(c.path);
-            const res = preferFolder(groups, plan, dir);
+            const res = preferFolder(groups, plan, parentDir(c.path));
             const label = t.preferred(shortDir(c, sources), res.changed.length);
             if (!res.changed.length) {
               toast(label);
               return;
             }
-            // Un clic recoche N groupes d'un coup : le bandeau offre Annuler (spec § Interactions),
-            // qui rend le plan d'avant tel quel.
-            const before = {
-              plan: new Map(plan),
-              touched: new Set(touched),
-              decided: new Set(decided),
-              preferred: new Map(preferred),
-            };
+            // Un clic recoche N groupes d'un coup : le toast offre Annuler, qui rend le plan d'avant.
+            const before = { plan: new Map(plan), decided: new Set(decided) };
             plan = res.plan;
-            for (const gid of res.changed) {
-              const changed = groups.find((x) => x.id === gid);
-              if (changed) touch(changed);
-            }
-            preferred.set(dir, (preferred.get(dir) ?? 0) + res.changed.length);
+            for (const gid of res.changed) for (const x of findGroup(gid)?.copies ?? []) decided.add(x.id);
             toast(label, true, () => {
               plan = before.plan;
-              touched = before.touched;
               decided = before.decided;
-              preferred.clear();
-              for (const [k, v] of before.preferred) preferred.set(k, v);
-              afterPlanChange(res.changed);
+              paintSlots();
             });
-            afterPlanChange(res.changed);
+            paintSlots();
           }
         : undefined,
     },
-    {
-      label: t.listen,
-      separated: true,
-      onPick: c.missing
-        ? undefined
-        : () => {
-            revealAside();
-            openCopy(c.id);
-          },
-    },
+    { label: t.listen, separated: true, onPick: c.missing ? undefined : () => moveCursor(c.id) },
     {
       label: t.reveal,
       onPick: c.missing
         ? undefined
         : () => void revealTrack(c.id).catch((err: unknown) => toast(humanizeError(err, T().revealFailed, "reveal_track"))),
     },
-    {
-      label: t.notDuplicates,
-      separated: true,
-      onPick: () =>
-        void refuseDuplicateGroup(g.copies.map((x) => x.id))
-          .then(() => {
-            if (openId != null && g.copies.some((x) => x.id === openId)) openId = null;
-            return renderDoublons();
-          })
-          .catch((err: unknown) => toast(humanizeError(err, T().notDuplicatesFailed, "refuse_duplicate_group"))),
-    },
+    { label: t.notDuplicates, separated: true, onPick: () => void refuseGroup(g) },
   ]);
 }
 
 // ---------------------------------------------------------------------------
-// Application
+// Résolution d'un groupe
 // ---------------------------------------------------------------------------
+
+/** Après une résolution : relit les groupes, puis ouvre le suivant dans la liste AFFICHÉE avant le
+ *  geste (règle de `queue-next.ts` : le suivant, ou le précédent au bout). */
+async function advanceAfter(doneGid: number): Promise<void> {
+  const order = rows.map((g) => g.id);
+  await renderDoublons({ keepOpen: false });
+  if (document.body.dataset.view !== "dups" || lot) return;
+  const next = pickNextAfter(order, doneGid, rows);
+  openGroup(next?.id ?? rows[0]?.id ?? null);
+}
+
+/** Entrée, ou le bouton primaire : applique l'Issue du groupe ouvert, tout de suite, en un lot de
+ *  journal annulable. Un groupe où rien ne part (À vérifier, ou toutes les copies gardées) se
+ *  résout en « ce ne sont pas des doublons ». */
+async function resolveOpen(): Promise<void> {
+  const g = findGroup(openGid);
+  if (!g || applying) return;
+  const o = groupOutcome(g, plan);
+  if (o.trashed.length === 0) {
+    await refuseGroup(g);
+    return;
+  }
+  const t = T();
+  applying = true;
+  try {
+    const res = await applyDuplicatePlan(o.trash.map((c) => c.id));
+    if (res.failed.length) {
+      for (const f of res.failed) console.error("doublons : copie non envoyée", f.id, f.error);
+      toast(t.partial(res.trashed.length, res.failed.length));
+    } else if (res.batch_id) {
+      const batch = res.batch_id;
+      toast(t.resolved(res.trashed.length), true, () => undoAndRefresh(batch));
+    }
+  } catch (err) {
+    toast(humanizeError(err, t.applyFailed, "apply_duplicate_plan"));
+    return;
+  } finally {
+    applying = false;
+  }
+  await advanceAfter(g.id);
+}
+
+/** ⌫ ou X : la copie sous le curseur part tout de suite ; le groupe reste ouvert s'il lui reste
+ *  plusieurs copies. Jamais la dernière copie présente d'un groupe. */
+async function trashCursor(): Promise<void> {
+  const g = findGroup(openGid);
+  const c = g?.copies.find((x) => x.id === cursorId);
+  if (!g || !c || c.missing || applying) return;
+  if (g.copies.filter((x) => !x.missing).length <= 1) return;
+  const t = T();
+  applying = true;
+  try {
+    const res = await applyDuplicatePlan([c.id]);
+    if (res.failed.length) toast(res.failed[0].error);
+    else if (res.batch_id) {
+      const batch = res.batch_id;
+      toast(t.trashedOne, true, () => undoAndRefresh(batch));
+    }
+  } catch (err) {
+    toast(humanizeError(err, t.applyFailed, "apply_duplicate_plan"));
+    return;
+  } finally {
+    applying = false;
+  }
+  const gid = g.id;
+  const order = rows.map((x) => x.id);
+  await renderDoublons({ keepOpen: true });
+  if (document.body.dataset.view !== "dups") return;
+  // Le groupe a pu changer d'id (sa plus petite copie est partie) ou disparaître (une seule copie
+  // restante) : on le retrouve par une copie survivante, sinon on passe au suivant.
+  const still = g.copies.find((x) => x.id !== c.id && groupOfCopy(x.id));
+  const now = still ? groupOfCopy(still.id) : null;
+  if (now) openGroup(now.id);
+  else openGroup(pickNextAfter(order, gid, rows)?.id ?? rows[0]?.id ?? null);
+}
+
+/** N, « Pas des doublons », ou Entrée sur un groupe où rien ne part : garder toutes les copies et
+ *  ne plus proposer ce groupe. */
+async function refuseGroup(g: DupScreenGroup): Promise<void> {
+  try {
+    await refuseDuplicateGroup(g.copies.map((x) => x.id));
+  } catch (err) {
+    toast(humanizeError(err, T().notDuplicatesFailed, "refuse_duplicate_group"));
+    return;
+  }
+  await advanceAfter(g.id);
+}
+
+/** Annule l'application `batch` — CE lot, pas le plus récent du journal (`undo_last`) : un autre
+ *  geste a pu se glisser entre l'application et le clic sur Annuler. */
+function undoAndRefresh(batch: string): void {
+  void revertBatch(batch)
+    .then(() => renderDoublons({ keepOpen: true }))
+    .catch((err: unknown) => toast(humanizeError(err, T().undoFailed, "revert_batch")));
+}
+
+// ---------------------------------------------------------------------------
+// Mode Lot
+// ---------------------------------------------------------------------------
+
+function selectedGroups(): DupScreenGroup[] {
+  return groups.filter((g) => lotSel.has(g.id));
+}
+
+/** Le résumé de la sélection (spec § Zone C en mode Lot), gabarit `.sift-bsel` de Revue. */
+function paintLotSummary(mid: HTMLElement): void {
+  const t = T();
+  const s = lotSummary(selectedGroups(), plan, true);
+  const row = (label: string, value: string) => `<dt>${label}</dt><dd>${value}</dd>`;
+  mid.innerHTML =
+    `<div class="sift-dupb sift-dupb-lot">` +
+    `<div class="sift-sel-count">${t.lotTitle(lotSel.size)}</div>` +
+    (lotSel.size === 0
+      ? `<div class="sift-dupb-consequence">${t.lotEmpty}</div>`
+      : `<dl class="sift-sel-rows">` +
+        row(t.lotTrash, `${s.copies.length} · ${fmtSize(s.bytes)}`) +
+        row(t.lotTies, String(s.ties)) +
+        row(t.lotRekordbox, String(s.rekordboxKept)) +
+        row(t.lotExcluded, String(s.excluded)) +
+        `</dl>`) +
+    `<div class="sift-dupb-lot-actions"><button type="button" class="sift-ranger-btn" data-dups="lotresolve"${s.groups === 0 ? " disabled" : ""}>${t.lotResolve(s.groups)}</button></div>` +
+    `</div>`;
+}
+
+function setLot(on: boolean): void {
+  if (lot === on) return;
+  lot = on;
+  lotSel = new Set();
+  lotAnchor = null;
+  repaintQueue();
+  paintQueueHead();
+  paintBar();
+  if (!on) reportFor = null;
+  paintBox();
+}
+
+function clickLot(gid: number, range: boolean): void {
+  const order = rows.map((g) => g.id);
+  const r = clickedSelection(lotSel, { id: gid, range }, order, lotAnchor, new Set(order));
+  lotSel = r.sel;
+  lotAnchor = r.anchor;
+  repaintQueue();
+  paintBar();
+  paintBox();
+}
 
 /** La ligne d'avertissement de la confirmation : des copies envoyées que Rekordbox n'a pas pu
  *  confirmer absentes. `undefined` : rien à dire, pas de ligne. */
@@ -678,42 +681,39 @@ function unverifiedLine(copies: readonly DupScreenCopy[]): string | undefined {
   return u ? T().confirmUnverified(u.count, u.reason) : undefined;
 }
 
-async function applyPlan(): Promise<void> {
+async function resolveLot(): Promise<void> {
   if (applying) return;
   const t = T();
-  const scope = visibleGroups(groups, filter, query);
-  const withRkb = planTotals(scope, plan, touched, true);
-  const withoutRkb = planTotals(scope, plan, touched, false);
+  const sel = selectedGroups();
+  const withRkb = lotSummary(sel, plan, true);
+  const withoutRkb = lotSummary(sel, plan, false);
   if (withoutRkb.copies.length === 0) return;
   const res = await confirmTrashPlan({
     paint: (keepRekordbox) => {
-      const p = keepRekordbox ? withRkb : withoutRkb;
+      const s = keepRekordbox ? withRkb : withoutRkb;
       return {
-        title: t.confirmTitle(p.copies.length),
-        recap: t.confirmRecap(p.copies.length, fmtSize(p.bytes), p.groups),
-        confirm: t.confirmButton(p.copies.length),
+        title: t.confirmTitle(s.groups),
+        recap: t.confirmRecap(s.copies.length, fmtSize(s.bytes)),
+        confirm: t.confirmButton(s.groups),
       };
     },
-    note: t.confirmNote(withRkb.toCheckLeft),
-    rekordboxCount: withRkb.rekordboxCopies,
-    rekordboxLabel: t.keepRekordbox(withRkb.rekordboxCopies),
+    note: t.confirmNote,
+    rekordboxCount: withoutRkb.copies.length - withRkb.copies.length,
+    rekordboxLabel: t.keepRekordbox(withoutRkb.copies.length - withRkb.copies.length),
     // Les copies non vérifiées partent avec ou sans la case : la ligne est la même des deux côtés.
     warning: unverifiedLine(withoutRkb.copies),
   });
   if (!res.confirmed) return;
   const chosen = res.keepRekordbox ? withRkb : withoutRkb;
-  const ids = chosen.copies.map((c) => c.id);
-  if (!ids.length) return;
-  await runApply(ids);
+  if (!chosen.copies.length) return;
+  await runLot(chosen.copies.map((c) => c.id), chosen.groups);
 }
 
 /** La feuille, non modale, en haut de la zone C (`.sift-batch-sheet`, forme de la feuille de copie
- *  du Finder). Elle vit dans une ancre COLLANTE de hauteur nulle, en tête de la table : la zone C
- *  défile, la feuille reste en haut de ce qu'on voit, sans pousser la table. Posée en absolu sur un
- *  hôte non positionné, elle s'ancrait à la fenêtre et couvrait la barre (revue du 2026-10-05). */
+ *  du Finder), dans une ancre de hauteur nulle : elle ne pousse pas la boîte. */
 function mountSheet(state: "progress" | "report", html: string): HTMLElement | null {
-  const main = document.querySelector<HTMLElement>(".sift-dups-main");
-  if (!main) return null;
+  const mid = document.getElementById("dmid");
+  if (!mid) return null;
   document.querySelector(".sift-dups-sheet-anchor")?.remove();
   const anchor = document.createElement("div");
   anchor.className = "sift-dups-sheet-anchor";
@@ -722,24 +722,12 @@ function mountSheet(state: "progress" | "report", html: string): HTMLElement | n
   sheet.dataset.state = state;
   sheet.innerHTML = html;
   anchor.appendChild(sheet);
-  main.insertBefore(anchor, main.firstChild);
+  mid.insertBefore(anchor, mid.firstChild);
   return sheet;
 }
 
-/** La feuille de progression : barre déterminée, copie courante, Arrêter. */
-function showSheet(total: number): HTMLElement | null {
-  const t = T();
-  return mountSheet(
-    "progress",
-    `<div class="sift-bs-head"><div class="sift-bs-title">${t.sheetTitle(total)}</div>` +
-      `<button class="sift-baction sift-baction--quiet sift-bs-stop" data-dups="stop">${t.stop}</button></div>` +
-      `<progress class="sift-bs-bar" value="0" max="${total}"></progress>` +
-      `<div class="sift-bs-step"></div>`,
-  );
-}
-
-/** Échec partiel (spec § États) : la feuille devient le rapport — les copies qui ont résisté, et
- *  pourquoi. Le reste est appliqué et s'annule d'un clic. Patron : `batch-sheet.ts::transformToReport`. */
+/** Échec partiel : la feuille devient le rapport — les copies qui ont résisté, et pourquoi. Le
+ *  reste est appliqué et s'annule d'un clic. Patron : `batch-sheet.ts::transformToReport`. */
 function showReport(res: DupApplyResult, names: ReadonlyMap<number, string>): void {
   const t = T();
   const items = res.failed
@@ -761,11 +749,16 @@ function showReport(res: DupApplyResult, names: ReadonlyMap<number, string>): vo
   );
 }
 
-async function runApply(ids: number[]): Promise<void> {
+async function runLot(ids: number[], nGroups: number): Promise<void> {
   const t = T();
   applying = true;
-  paintBar(visibleGroups(groups, filter, query).length);
-  const sheet = showSheet(ids.length);
+  const sheet = mountSheet(
+    "progress",
+    `<div class="sift-bs-head"><div class="sift-bs-title">${t.sheetTitle(ids.length)}</div>` +
+      `<button class="sift-baction sift-baction--quiet sift-bs-stop" data-dups="stop">${t.stop}</button></div>` +
+      `<progress class="sift-bs-bar" value="0" max="${ids.length}"></progress>` +
+      `<div class="sift-bs-step"></div>`,
+  );
   const names = new Map<number, string>();
   for (const g of groups) for (const c of g.copies) names.set(c.id, fileName(c.path));
   let unlisten: (() => void) | null = null;
@@ -780,67 +773,76 @@ async function runApply(ids: number[]): Promise<void> {
       if (step) step.textContent = t.sheetStep(p.done, p.total, names.get(p.id) ?? "");
     });
     const res = await applyDuplicatePlan(ids);
-    const n = res.trashed.length;
     lastBatch = res.batch_id;
     if (res.failed.length) {
       for (const f of res.failed) console.error("doublons : copie non envoyée", f.id, f.error);
       report = res;
-    } else if (n > 0 && res.batch_id) {
+    } else if (res.trashed.length > 0 && res.batch_id) {
       const batch = res.batch_id;
-      toast(t.done(n), true, () => undoAndRefresh(batch));
+      toast(t.lotDone(nGroups, res.trashed.length), true, () => undoAndRefresh(batch));
     }
   } catch (err) {
     toast(humanizeError(err, t.applyFailed, "apply_duplicate_plan"));
   } finally {
     unlisten?.();
-    sheet?.closest(".sift-dups-sheet-anchor")?.remove();
     applying = false;
-    if (openId != null && !findCopy(openId)) openId = null;
-    await renderDoublons();
+    lot = false;
+    lotSel = new Set();
+    lotAnchor = null;
+    await renderDoublons({ keepOpen: false });
     if (report && document.body.dataset.view === "dups") showReport(report, names);
   }
-}
-
-/** Annule l'application `batch` — CE lot, pas le plus récent du journal (`undo_last`) : un autre
- *  geste a pu se glisser entre l'application et le clic sur Annuler. */
-function undoAndRefresh(batch: string): void {
-  void revertBatch(batch)
-    .then(() => renderDoublons())
-    .catch((err: unknown) => toast(humanizeError(err, T().undoFailed, "revert_batch")));
 }
 
 // ---------------------------------------------------------------------------
 // Rendu
 // ---------------------------------------------------------------------------
 
-/** Garde les choix de l'utilisateur sur les copies qu'il a tranchées et qui existent encore ; tout
- *  le reste repart des cases de la règle (`duplicates-model.ts::rebasePlan`). */
-function rebase(next: DupScreenGroup[]): void {
-  const r = rebasePlan(next, plan, decided);
-  plan = r.plan;
-  touched = r.touched;
-  decided = r.decided;
+/** La coque : la colonne de file et la boîte, sur le gabarit de Revue (`router.ts::revueShell`).
+ *  Identifiants PROPRES (`#dqcol`, `#dql`, `#dmid`) et non ceux de Revue : `queue-panel.ts` et
+ *  `filing*.ts` cherchent `#qcol`, `#ql` et `#mid` sur le document, et rempliraient ceux-ci. */
+function mountShell(content: HTMLElement): void {
+  const t = T();
+  content.style.display = "flex";
+  content.style.overflowY = "hidden";
+  content.innerHTML =
+    `<div class="sift-revue-row">` +
+    `<div class="queue" id="dqcol">` +
+    `<div class="sift-qhead"></div>` +
+    `<div id="dql" role="listbox" tabindex="0" aria-label="${t.listAria}"><div class="sift-dupq-list"></div></div>` +
+    `</div>` +
+    `<div class="sift-inspector"><div class="mid" id="dmid"></div></div>` +
+    `</div>`;
+  const ql = requireEl<HTMLElement>("#dql", "mountShell", content);
+  const host = requireEl<HTMLElement>(".sift-dupq-list", "mountShell", content);
+  virtual?.destroy();
+  virtual = createVirtualList<DupScreenGroup>({
+    host,
+    scrollContainer: ql,
+    items: rows,
+    rowHtml: (g) => queueRowHtml(g, { active: !lot && g.id === openGid, checked: lot ? lotSel.has(g.id) : null }),
+    probeHtml: rows.length ? queueRowHtml(rows[0], { active: false, checked: null }) : "",
+    fallbackRowH: 46,
+  });
 }
 
 /** `soft` : rafraîchissement venu de `queue:changed` (rafales coalescées à 400 ms : scan, watcher,
- *  rangement, Ctrl+Z). Rien de changé : rien ne se repeint. Sinon la table se remet à jour DANS
- *  l'écran monté, et l'inspecteur garde son lecteur tant que la copie ouverte existe — une
- *  analyse de fond ne coupe pas une écoute. */
-export async function renderDoublons(opts: { soft?: boolean } = {}): Promise<void> {
-  // Appelé aussi APRÈS coup — fin d'une application, Annuler d'un toast, refus d'un groupe — alors
-  // que l'utilisateur a pu changer d'écran : le jeton d'époque, pris ici, serait celui de l'autre
-  // écran, et le rendu repeindrait son `#content`. Le routeur pose `data-view` avant d'appeler.
+ *  rangement, Ctrl+Z). Rien de changé : rien ne se repeint, et l'écoute continue. `keepOpen` : le
+ *  groupe ouvert le reste s'il existe encore (sinon la boîte se vide, l'appelant en choisit un). */
+export async function renderDoublons(opts: { soft?: boolean; keepOpen?: boolean } = {}): Promise<void> {
+  // Appelé aussi APRÈS coup — fin d'une résolution, Annuler d'un toast — alors que l'utilisateur a
+  // pu changer d'écran : le jeton d'époque, pris ici, serait celui de l'autre écran. Le routeur pose
+  // `data-view` avant d'appeler.
   if (document.body.dataset.view !== "dups") return;
   const content = requireEl<HTMLElement>("#content", "renderDoublons");
   const token = viewEpoch();
   installDoublonsKeys();
-  // Posés dès le premier passage, même en erreur : le « Réessayer » d'un premier chargement raté
-  // n'a pas d'autre écouteur.
-  if (!tableWired) {
-    wireTable(content);
-    tableWired = true;
+  if (!wired) {
+    wire(content);
+    wired = true;
   }
-  if (!content.querySelector(".sift-dups-main, .sift-empty-state")) {
+  const mounted = !!content.querySelector("#dqcol");
+  if (!mounted && !content.querySelector(".sift-empty-state")) {
     content.innerHTML = `<div class="sift-library-main"><span class="sift-skel sift-skel-line"></span></div>`;
   }
   let next: DupScreenGroup[];
@@ -853,6 +855,8 @@ export async function renderDoublons(opts: { soft?: boolean } = {}): Promise<voi
     virtual?.destroy();
     virtual = null;
     const t = T();
+    content.style.display = "";
+    content.style.overflowY = "";
     content.innerHTML =
       `<div class="sift-library-main"><div class="sift-ec-fail">${t.loadFailed} ${esc(String(err))} ` +
       `<button data-dups="retry" class="sift-meta-ident-btn">${t.retry}</button></div></div>`;
@@ -860,63 +864,60 @@ export async function renderDoublons(opts: { soft?: boolean } = {}): Promise<voi
     closeAside();
     return;
   }
-  if (opts.soft && content.querySelector(".sift-dups-main") && groups.length > 0 && next.length > 0) {
-    if (JSON.stringify(next) === JSON.stringify(groups)) return;
-    groups = next;
-    rebase(next);
-    if (openId != null && !findCopy(openId)) openCopy(null);
-    refreshTable();
-    if (openId != null) paintCompare();
-    else renderRest();
-    return;
-  }
+  if (opts.soft && mounted && JSON.stringify(next) === JSON.stringify(groups)) return;
+  const r = rebasePlan(next, plan, decided);
   groups = next;
-  rebase(next);
-  if (pendingFocus != null) {
-    // Venue de Revue : la copie s'ouvre si elle est dans un groupe ; sinon l'écran s'ouvre au repos.
-    openId = findCopy(pendingFocus) ? pendingFocus : null;
-    pendingFocus = null;
-  }
-  if (openId != null && !findCopy(openId)) openId = null;
+  plan = r.plan;
+  decided = r.decided;
+  lotSel = new Set([...lotSel].filter((id) => groups.some((g) => g.id === id)));
+  closeAside();
 
   if (groups.length === 0) {
     virtual?.destroy();
     virtual = null;
     rows.length = 0;
     const t = T();
+    content.style.display = "";
+    content.style.overflowY = "";
     content.innerHTML = emptyStateHtml({ title: t.emptyTitle, note: t.emptyNote, backToRevue: true });
     wireEmptyState(content);
-    mountBarActions("");
     const countEl = document.getElementById("sift-tb-count");
     if (countEl) countEl.textContent = "";
-    closeAside();
     return;
   }
 
-  const t = T();
-  virtual?.destroy();
-  content.innerHTML =
-    `<div class="sift-library-main sift-dups-main">${headHtml()}` +
-    `<div id="sift-dups-list" role="listbox" aria-label="${t.listAria}"></div>${legendHtml()}</div>`;
-  const listHost = requireEl<HTMLElement>("#sift-dups-list", "renderDoublons", content);
   rows.length = 0;
-  rows.push(...flattenRows(visibleGroups(groups, filter, query)));
-  virtual = createVirtualList<DupRow>({
-    host: listHost,
-    scrollContainer: content,
-    items: rows,
-    rowHtml: (row) => dupRowHtml(row, rowView()),
-    probeHtml: rows.length ? dupRowHtml(rows[0], rowView()) : "",
-    fallbackRowH: 32,
-  });
-  paintBar(visibleGroups(groups, filter, query).length);
-  if (openId != null) {
-    scrollRowIntoView(openId);
-    renderDetail(openId);
-  } else renderRest();
+  rows.push(...visible());
+  if (!mounted) mountShell(content);
+  paintQueueHead();
+  paintBar();
+
+  let focus: number | null = null;
+  if (pendingFocus != null) {
+    // Venue de Revue : le groupe de la copie s'ouvre, curseur sur elle.
+    const g = groupOfCopy(pendingFocus);
+    if (g) {
+      openGid = g.id;
+      focus = pendingFocus;
+    }
+    pendingFocus = null;
+  }
+  const stillOpen = findGroup(openGid);
+  if (focus != null) openGroup(openGid, focus);
+  else if (opts.keepOpen === false) {
+    // Après une résolution : l'appelant (`advanceAfter`) ouvre le suivant.
+    openGid = null;
+    repaintQueue();
+    paintBox();
+  } else if (stillOpen) {
+    // Le groupe ouvert existe encore : il garde son curseur s'il le peut, et l'écoute en cours.
+    if (!stillOpen.copies.some((c) => c.id === cursorId)) cursorId = recommendedCopy(stillOpen, plan).id;
+    repaintQueue();
+    paintBox();
+  } else openGroup(rows[0]?.id ?? null);
 }
 
-function wireTable(content: HTMLElement): void {
+function wire(content: HTMLElement): void {
   content.addEventListener("click", (e) => {
     if (document.body.dataset.view !== "dups") return;
     const t = e.target as HTMLElement;
@@ -937,122 +938,151 @@ function wireTable(content: HTMLElement): void {
       if (lastBatch) undoAndRefresh(lastBatch);
       return;
     }
-    const ck = t.closest<HTMLInputElement>("[data-dupkeep]");
-    if (ck) {
-      const found = findCopy(Number(ck.dataset.dupkeep));
-      if (found) {
-        setKeep(found.g, found.c, ck.checked);
-        afterPlanChange([found.g.id]);
-      }
-      return;
-    }
-    const row = t.closest<HTMLElement>("[data-dupcopy]");
-    // Le second clic d'un double-clic ne referme pas la copie qu'il vient d'ouvrir : le double-clic
-    // a son propre geste, juste dessous.
-    if (row && e.detail <= 1) {
-      const id = Number(row.dataset.dupcopy);
-      openCopy(openId === id ? null : id);
-    }
-  });
-  // Double-clic : écouter (spec § Interactions) — même geste que « Écouter » au menu : la copie
-  // s'ouvre dans l'inspecteur, qui porte le lecteur.
-  content.addEventListener("dblclick", (e) => {
-    if (document.body.dataset.view !== "dups") return;
-    const t = e.target as HTMLElement;
-    if (t.closest("[data-dupkeep]")) return;
-    const row = t.closest<HTMLElement>("[data-dupcopy]");
-    const found = row ? findCopy(Number(row.dataset.dupcopy)) : null;
-    if (!found || found.c.missing) return;
-    revealAside();
-    if (openId !== found.c.id) openCopy(found.c.id);
-  });
-  content.addEventListener("contextmenu", (e) => {
-    if (document.body.dataset.view !== "dups") return;
-    const row = (e.target as HTMLElement).closest<HTMLElement>("[data-dupcopy]");
-    if (!row) return;
-    e.preventDefault();
-    const found = findCopy(Number(row.dataset.dupcopy));
-    if (!found) return;
-    // Le clic droit OUVRE d'abord la copie (comme dans Rangés), puis le menu.
-    if (openId !== found.c.id) openCopy(found.c.id);
-    openMenu(e.clientX, e.clientY, found.g, found.c);
-  });
-  // La barre unifiée vit hors de `#content` : son délégué est sur le document, filtré par vue.
-  document.addEventListener("click", (e) => {
-    if (document.body.dataset.view !== "dups") return;
-    const t = e.target as HTMLElement;
     const pop = t.closest<HTMLElement>('[data-dups="filterpop"]');
     if (pop) {
       if (document.getElementById(FILTER_POP_ID)) closeFilterPop();
       else openFilterPop(pop);
       return;
     }
-    if (t.closest('[data-dups="apply"]')) void applyPlan();
+    if (t.closest('[data-dups="lot"]')) {
+      setLot(!lot);
+      return;
+    }
+    if (t.closest('[data-dups="lotresolve"]')) {
+      void resolveLot();
+      return;
+    }
+    if (t.closest('[data-dups="keep"]')) {
+      void resolveOpen();
+      return;
+    }
+    if (t.closest('[data-dups="notdups"]')) {
+      const g = findGroup(openGid);
+      if (g) void refuseGroup(g);
+      return;
+    }
+    const issue = t.closest<HTMLElement>("[data-dupsissue]");
+    if (issue) {
+      toggleCopy(Number(issue.dataset.dupsissue));
+      return;
+    }
+    const col = t.closest<HTMLElement>("[data-dupscol]");
+    if (col) {
+      moveCursor(Number(col.dataset.dupscol));
+      return;
+    }
+    const row = t.closest<HTMLElement>("#dql .qi[data-dupgroup]");
+    if (row) {
+      const gid = Number(row.dataset.dupgroup);
+      // Mode Lot : toute la ligne coche, Maj+clic coche une plage (mécanique de Revue).
+      if (lot) clickLot(gid, e.shiftKey);
+      else if (gid !== openGid) openGroup(gid);
+    }
+  });
+  content.addEventListener("contextmenu", (e) => {
+    if (document.body.dataset.view !== "dups") return;
+    const col = (e.target as HTMLElement).closest<HTMLElement>("[data-dupscol]");
+    const g = findGroup(openGid);
+    const c = g?.copies.find((x) => x.id === Number(col?.dataset.dupscol));
+    if (!g || !c) return;
+    e.preventDefault();
+    moveCursor(c.id);
+    openMenu(e.clientX, e.clientY, g, c);
   });
 }
 
-/** Clavier de l'écran (spec § Interactions) : ↑ ↓, Espace, Entrée, ⌫, Ctrl+Entrée. Ctrl+Z est
- *  global (`filing.ts::installUndoShortcut`) ; le retour des copies repeint l'écran par
- *  `queue:changed`, que `undo_last` émet. Ni Entrée ni ⌫ n'exécutent rien : ils changent le plan. */
+/** Clavier de l'écran — celui de Revue (spec § Interactions, planche B « Clavier — couche 3 »).
+ *  Ctrl+Z est global (`filing.ts::installUndoShortcut`) ; le retour des copies repeint l'écran par
+ *  `queue:changed`, que `undo_last` émet. */
 function installDoublonsKeys(): void {
   if (keysWired) return;
   keysWired = true;
   document.addEventListener("keydown", (e) => {
     if (document.body.dataset.view !== "dups" || applying) return;
     const target = e.target as HTMLElement | null;
-    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
-      if (!(target instanceof HTMLInputElement && target.type === "checkbox")) return;
-    }
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
     if (target?.closest('[role="menu"], [role="alertdialog"], #sift-context-menu')) return;
     // Une confirmation ouverte bloque tout, même quand le focus a quitté sa carte (un clic dans son
     // texte le rend à <body>) : repérée par son voile, comme `shortcuts.ts`.
     if (document.getElementById("sift-confirm-overlay")) return;
-    // Un curseur du lecteur (volume, position) prend ↑ ↓ pour lui ; un bouton ou un lien focalisé
-    // prend Entrée et Espace — sa propre activation, pas un geste sur le plan (`chrome.ts`, même
-    // règle pour la navigation au clavier). Une case Garder prend Espace : la cocher.
+    // Un curseur du lecteur (volume, position) prend ← → ↑ ↓ pour lui ; un bouton focalisé prend
+    // Entrée et Espace — sa propre activation (`chrome.ts`, même règle pour la navigation).
     const onSlider = !!target?.closest('[role="slider"]');
     const onControl = !!target?.closest('button, a, [role="button"], summary');
-    const onCheckbox = target instanceof HTMLInputElement && target.type === "checkbox";
     const mod = e.ctrlKey || e.metaKey;
-    if (mod && e.key === "Enter") {
+    if (mod && !e.altKey && (e.key === "a" || e.key === "A") && lot) {
       e.preventDefault();
-      void applyPlan();
+      lotSel = e.shiftKey ? new Set() : new Set(rows.map((g) => g.id));
+      repaintQueue();
+      paintBar();
+      paintBox();
       return;
     }
     if (mod || e.altKey) return;
+    if (e.key === "Escape" && lot) {
+      e.preventDefault();
+      setLot(false);
+      return;
+    }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (onSlider || lot) return;
+      e.preventDefault();
+      stepGroup(e.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
+    if (lot) return;
+    // Les gestes qui décident ne se rejouent pas en auto-répétition : le premier appui suffit.
     switch (e.key) {
-      case "ArrowDown":
+      case "ArrowRight":
+      case "ArrowLeft":
         if (onSlider) return;
         e.preventDefault();
-        moveOpen(1);
-        return;
-      case "ArrowUp":
-        if (onSlider) return;
-        e.preventDefault();
-        moveOpen(-1);
+        stepCursor(e.key === "ArrowRight" ? 1 : -1);
         return;
       case " ":
-        if (openId == null || onControl || onCheckbox) return;
+        if (onControl) return;
         e.preventDefault();
         togglePlay();
         return;
-      // Entrée et ⌫ changent le plan : une touche tenue (auto-répétition ~30/s) ne rejoue pas le
-      // geste — le premier appui suffit, les suivants ne changeraient rien qu'à repeindre.
       case "Enter":
-        if (openId == null || e.repeat || onControl) return;
+        if (e.repeat || onControl) return;
         e.preventDefault();
-        keepOnly(openId);
+        void resolveOpen();
         return;
       case "Backspace":
-        if (openId == null || e.repeat) return;
+      case "x":
+      case "X":
+        if (e.repeat) return;
         e.preventDefault();
-        dontKeep(openId);
+        void trashCursor();
         return;
+      case "g":
+      case "G":
+        if (e.repeat || cursorId == null) return;
+        e.preventDefault();
+        toggleCopy(cursorId);
+        return;
+      case "n":
+      case "N": {
+        if (e.repeat) return;
+        const g = findGroup(openGid);
+        if (!g) return;
+        e.preventDefault();
+        void refuseGroup(g);
+        return;
+      }
+    }
+    if (/^[1-9]$/.test(e.key)) {
+      const g = findGroup(openGid);
+      const c = g?.copies[Number(e.key) - 1];
+      if (!c) return;
+      e.preventDefault();
+      moveCursor(c.id);
     }
   });
   // Le retour de copies (Ctrl+Z, Restaurer) et l'arrivée de pistes changent les groupes : repeindre
-  // l'écran s'il est affiché. Rafales coalescées, comme le rafraîchissement de la file ; le rendu
-  // DOUX ne repeint rien quand rien n'a changé.
+  // l'écran s'il est affiché. Rafales coalescées ; le rendu DOUX ne repeint rien quand rien n'a
+  // changé, et garde le groupe ouvert.
   let timer: ReturnType<typeof setTimeout> | undefined;
   void onQueueChanged(() => {
     clearTimeout(timer);

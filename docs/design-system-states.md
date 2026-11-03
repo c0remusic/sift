@@ -135,7 +135,7 @@
 - L2172 — Vue agrandie du spectrogramme `openSpectroEnlarged()` — par-dessus l'app, grille calculée à la taille du canevas (max-pool), trois états ; module + story (09-29, #72).
 - L2197 — Ligne de la release choisie `chosenRowHtml()` — contrôle « N autres » qui rouvre la liste de la session sans requête, release appliquée sélectionnée, Échap sans écrire ; module pur + story (09-29, #68).
 - L2229 — Inspecteur masquable `#sift-aside-toggle` et prises des poignées — bouton de barre, ⌥⌘I, révélé par les seules commandes de la zone D, jamais par une sélection ; prise visible au repos (10-05).
-- L2251 — Écran Doublons `duplicates-view.ts` — table de tous les groupes (grille commune, encre de différence, en-têtes de groupe à 32 px), plan et application, confirmation destructive, inspecteur qui compare ; modules purs + story (10-05).
+- L2251 — Écran Doublons `duplicates-view.ts` — option B : file de tri, grille de comparaison par copie, rangée Issue, résolution par Entrée, mode Lot ; modules purs + story (11-03).
 
 ## Ligne de queue — `.qi` (`styles.css:1127-1214`, revérifié au grep le 2026-08-27)
 
@@ -2249,39 +2249,39 @@ Clavier : Entrée et Espace sur le bouton focalisé basculent ICI, avant les tou
 que le focus est dans la zone D le rend au bouton (sinon il tombait sur `<body>`, sans `blur`).
 
 
-## Écran Doublons — table de tous les groupes, plan, application (2026-10-05) — `duplicates-view.ts`
+## Écran Doublons — file de tri, rangée Issue, mode Lot (option B, 2026-11-03) — `duplicates-view.ts`
 
-Spec `docs/ui-specs/doublons.md`, validée le 2026-10-05 (direction hybride). Destination du rail sous
-Revue, glyphe `ti-copy`, sans compte (la barre écrit « N groupes »). Markup des rangées : module pur
-`duplicates-rows.ts` ; modèle (plan, effets, encre de différence, filtres, phrase de la règle) :
-`duplicates-model.ts`, testé par `test/duplicates-model.test.ts`. Story « Écrans/Doublons/Table »
-(`duplicates-table.stories.ts`) : elle EXÉCUTE le vrai rendu des rangées.
+Spec `docs/ui-specs/doublons.md` § Layout, option B décidée par Antoine le 2026-10-30 ; elle
+remplace la table de l'hybride du 2026-10-05 (son historique : `git log -- frontend/duplicates-view.ts`).
+Destination du rail sous Revue, glyphe `ti-copy`, sans compte (la barre écrit « N groupes »).
+Markup : module pur `duplicates-rows.ts` ; modèle (plan, Issue, conséquence, résumé du Lot) :
+`duplicates-model.ts`, testé par `test/duplicates-model.test.ts`. Story « Écrans/Doublons/File de
+tri » (`duplicates-box.stories.ts`) : elle EXÉCUTE le vrai rendu de la file et de la grille.
 
 | État | Rendu |
 |---|---|
 | Calcul des groupes | squelette `.sift-skel-line` dans `.sift-library-main` ; compte vide |
-| Table | `.sift-library-main.sift-dups-main` : en-tête `.sift-lib-thead.sift-dups-row`, rangées `.lr.sift-dups-row` sur la grille `--sift-dups-cols` (Garder · Fichier · Preuve · Verdict · Format · Débit · Durée · Dossier · Rekordbox), 32 px partout, fonds alternés par index CONTINU en-têtes compris, ni filet ni survol ; légende clavier `.sift-dups-foot` collée en bas |
-| Rangée de groupe | `.lr.sift-dups-hd` : titre 600 « Artiste — Titre » + « (Version) » jamais tronquée, preuve en secondaire, nature en tertiaire (« 3 copies · autre qualité »), effet calé à droite (« 2 copies à la corbeille · 125,4 Mo ») |
-| Encre de différence | par colonne et par groupe : `.sift-dups-diff` (primaire) là où les copies diffèrent, `.sift-dups-same` (tertiaire) ailleurs ; le verdict n'est teinté (`.sift-lib-v-*`) que s'il diffère |
-| Copie tronquée / introuvable | marque `.sift-dups-mark` en encre d'avertissement après le nom ; case désactivée (`DupScreenCopy.keepable`, calculé côté Rust). Quand TOUTES les copies présentes sont tronquées, elles restent cochables, la meilleure cochée, la marque demeure (2026-10-06) — story « Toutes tronquées » |
-| Copie que Rekordbox joue | `.sift-dups-rkb` : `ti-disc` + « 3 playlists » ; décochée, en `.sift-dups-warn`, et l'effet du groupe dit « Rekordbox la joue (3 playlists) » |
-| À vérifier | effet « À vérifier · hors du plan » en `.sift-dups-warn` ; tranché à la main, le groupe entre dans le plan. Une copie à durée INCONNUE (pas encore analysée, illisible) sans lien plus fort que le nom suffit à le mettre là ; « Préférer ce dossier » ne le tranche jamais |
-| Barre | pop-up « Groupes » (`.sift-bib-facet-btn`, menu `.sift-facet-pop` + `.sift-menu-*`, coche à l'encre du texte, comptes ; le déclencheur le referme) ; « Envoyer N copies à la corbeille » en `.sift-secondary-trash.sift-bar-btn` : N compte le plan tel que la table le montre, copies que Rekordbox joue comprises quand on les a décochées — désactivé exactement quand Ctrl+Entrée ne fait rien ; recherche |
-| Inspecteur au repos | résumé `.sift-sel-rows` : groupes, copies en trop, dans le plan, récupérable ; preuves ; à vérifier, avec Rekordbox ; la règle écrite ; dossiers préférés de la session |
-| Copie ouverte | lecteur et diagnostic de Revue (`openReportInto`), puis « Comparée à : … » : `.sift-dups-cmp`, deux colonnes de faits ; la gardée ouverte se compare à la meilleure des autres ; la phrase de la règle `.sift-dups-why`. Une copie introuvable n'ouvre pas le lecteur (l'échec d'un fichier disparu supprimerait sa ligne) |
-| Confirmation | `confirmTrashPlan` : variante destructive de la confirmation du Lot, bouton `.sift-secondary-trash` (jamais le bleu), Annuler focalisé, armement 250 ms, case cochée « Garder aussi les copies que Rekordbox joue » ; titre, récapitulatif et bouton suivent la case. Copies envoyées que Rekordbox n'a pas pu vérifier (Rekordbox ouvert, ou XML d'export seul) : ligne `.sift-batch-alert-warn` en encre d'avertissement sous le récapitulatif, avec la raison — elles ne sont pas gardées d'office (2026-10-05) ; l'inspecteur écrit « non vérifiée » |
-| Application | feuille `.sift-batch-sheet` dans l'ancre collante `.sift-dups-sheet-anchor` (hauteur nulle, en tête de la table : elle suit le défilement sans pousser la table, jamais par-dessus la barre) : barre déterminée, « Copie i sur N · fichier », Arrêter ; puis toast « N copies dans la corbeille · Annuler », qui annule CE lot (`revert_batch`) et rend chaque copie à son statut d'avant — une copie rangée retourne à Rangés |
-| Échec partiel | la feuille devient le rapport : titre « N copies dans la corbeille, K en échec », section `.sift-bs-section--error` avec chaque copie restée et pourquoi (`.sift-bs-item-err`), pied « Annuler » (le lot appliqué) et « Fermer » |
-| « Préférer ce dossier » | toast « Préféré : … — N groupes recochés · Annuler », qui rend le plan d'avant |
-| Vide | `emptyStateHtml` « Aucun doublon à trier », sortie vers Revue ; inspecteur fermé, bouton d'application retiré |
+| Coque | gabarit de Revue avec ses PROPRES identifiants : colonne `.queue#dqcol` (tête `.sift-qhead`, liste `#dql`, virtualisée), boîte `.sift-inspector > .mid#dmid` — `#qcol`, `#ql` et `#mid` sont cherchés sur le document par `queue-panel.ts` et `filing*.ts` |
+| Tête de file | pulldown « Tous ▾ » (`.sift-qfacet-btn`, menu `.sift-facet-pop` + `.sift-menu-*`, comptes) à gauche ; « Sélectionner » / « Terminé » (`.sift-qselect-btn`) à droite |
+| Ligne de groupe | `.qi` : « Artiste — Titre (Version) » en 500, une pastille `verdictDot` (celle de Revue) par copie collée au titre ; dessous `.qi-sub` « N copies · preuve · formats », ou « durées différentes » en `.sift-dups-warn` pour un À vérifier ; `ti-disc` au bord droit si Rekordbox joue une copie |
+| Groupe ouvert | le lecteur de Revue (`openReportInto`) sur la copie sous le curseur : titre du groupe, « Artiste · N copies » ; dans `#filbox-settings` : « Différent par : … » et la preuve (`.sift-dupb-facts`), la grille, la phrase de conséquence ; dans `#filbox-foot` : légende clavier, « Pas des doublons », « Garder la copie N » (`.sift-ranger-btn`, il GARDE) |
+| Grille | `.sift-dupb-grid` : étiquettes collantes à gauche, une colonne par copie (plancher `--dupb-col-w`, défilement horizontal au-delà de trois) ; tête de colonne n° · source › dossier · fichier · En file / Rangée · « Recommandée — raison » ; encre de différence `.sift-dups-diff` / `.sift-dups-same` ; colonne du curseur au fond `--overlay-selected` |
+| Issue | dernière rangée, un bouton nu par copie : « Gardée » `ti-check` primaire 600, « Corbeille » `ti-trash` avertissement, « Introuvable » / « Tronquée » tertiaires et inertes ; clic ou G bascule, jamais la dernière gardée |
+| Conséquence | « Entrée : garder la copie 2 — les copies 1 et 3 partent à la Corbeille (53,8 Mo). Annulable. » ; une copie qui part et que Rekordbox joue ajoute sa ligne en encre d'avertissement |
+| À vérifier | toutes les copies Gardées ; « Durées écartées de … — deux versions ? Entrée : ce ne sont pas des doublons. » |
+| Résolu | toast « Groupe résolu — N copies à la Corbeille · Annuler » (annule CE lot), puis le groupe suivant de la liste affichée (`queue-next.ts`) |
+| Mode Lot | case `.qi-ck` par ligne, toute la ligne coche, Maj+clic une plage (`queue-selection.ts`) ; barre « N sélectionnés » ; zone C : résumé `.sift-dupb-lot` (copies à la Corbeille et taille, égalités, copies Rekordbox gardées, À vérifier exclus) et « Résoudre N groupes… » |
+| Confirmation du Lot | `confirmTrashPlan` : « Résoudre N groupes ? », case « Garder aussi les copies que Rekordbox joue », ligne des copies non vérifiées |
+| Application du Lot | feuille `.sift-batch-sheet` dans l'ancre `.sift-dups-sheet-anchor`, barre déterminée, Arrêter ; échec partiel : la feuille devient le rapport |
+| Vide | `emptyStateHtml` « Aucun doublon à trier », sortie vers Revue |
 | Échec | `.sift-ec-fail` : le message brut et « Réessayer » ; jamais lu comme « aucun doublon » |
 
-Clavier : ↑ ↓ copie précédente / suivante, Espace écouter, Entrée garder seulement celle-ci, ⌫ ne
-pas garder, Ctrl+Entrée appliquer (confirmation), Ctrl+Z global. Ni Entrée ni ⌫ n'exécutent rien :
-ils changent le plan. Exceptions : un curseur du lecteur focalisé garde ↑ ↓, un bouton ou un lien
-focalisé garde Entrée et Espace, une case Garder garde Espace ; une confirmation ouverte bloque
-tout. Souris : clic ouvre / referme la copie, double-clic l'écoute (l'ouvre sans la refermer).
+Clavier : Espace écouter, ← → copie (le lecteur suit à la même position, écoute A/B), 1…9 aller à
+la copie, G Gardée / Corbeille, Entrée appliquer l'Issue et passer au suivant, ⌫ ou X la copie du
+curseur à la Corbeille tout de suite, N pas des doublons, ↑ ↓ groupe ; en mode Lot Ctrl+A /
+Ctrl+Maj+A, Échap sort. Ctrl+Z global. Clic droit sur une colonne : Garder seulement celle-ci ·
+Garder aussi · Préférer ce dossier · Écouter · Ouvrir l'emplacement · Ce ne sont pas des doublons.
 
-Le plan se souvient des copies TRANCHÉES, pas des groupes : l'id d'un groupe est son plus petit id
-de piste, qui change quand cette copie part — une seconde copie gardée à la main le reste après
-l'application (`duplicates-model.ts::rebasePlan`).
+NON FAIT de la spec : la rangée « Date du fichier » (le contrat `DupScreenCopy` n'a pas de date),
+les spectres repliables dans la grille, le libellé « Copie N » du lecteur, et le redimensionnement de
+la colonne de file (largeur fixe `--pane-w`).

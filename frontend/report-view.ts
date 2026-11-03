@@ -61,6 +61,19 @@ export function togglePlay() {
   void currentWs?.playPause();
 }
 
+/** Écoute A/B de Doublons (spec `doublons.md` § Zone C : « passer d'une copie à l'autre en lecture
+ *  garde la position ») : où en est le lecteur courant, et une reprise que le PROCHAIN lecteur monté
+ *  applique à son `ready`. Le lecteur précédent est détruit au montage du suivant, d'où ce relais. */
+let pendingResume: { time: number; play: boolean } | null = null;
+
+export function playerPosition(): { time: number; play: boolean } | null {
+  return currentWs ? { time: currentWs.getCurrentTime(), play: currentWs.isPlaying() } : null;
+}
+
+export function resumeNextPlayer(at: { time: number; play: boolean } | null): void {
+  pendingResume = at;
+}
+
 // One-time hover styling for the clickable time display (inline styles can't do :hover).
 function ensureStyles() {
   if (document.getElementById("sift-report-style")) return;
@@ -810,6 +823,12 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     });
   }
   ws.on("ready", () => {
+    if (pendingResume) {
+      const at = pendingResume;
+      pendingResume = null;
+      ws.setTime(Math.min(at.time, ws.getDuration() || at.time));
+      if (at.play) void ws.play();
+    }
     updateTime();
     if (errorEl) errorEl.hidden = true;
     // Resync the icon on the REAL state. The button is clickable from the moment mountPlayer

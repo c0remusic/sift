@@ -715,65 +715,74 @@ body.sift-aside-hidden #sift-aside,body.sift-aside-hidden #sift-aside-resize{dis
 .sift-ec-fail{color:var(--color-text-danger);font-size:var(--text-md);display:flex;gap:var(--space-8);align-items:center;flex-wrap:wrap;padding:var(--space-12) 0}
 #sift-aside .sift-editor-input{width:100%}
 
-/* ---- Doublons, lot 1 (2026-10-05, `docs/ui-specs/doublons.md`) ----
-   Règles portées de la maquette hybride validée par Antoine, où chaque valeur a été recoupée avec
-   les tokens de ce fichier. Préfixe au pluriel exprès : `.sift-dup-banner*` (bandeau de Revue)
-   existe déjà. Une grille commune à l'en-tête, aux rangées de groupe et de copie : la rangée de
-   groupe pose ses valeurs DANS les colonnes, comme une rangée parente du Finder. Hauteur 32 px
-   partout (--row-h) : la liste reste virtualisable à hauteur constante (list-virtual.ts).
-   Colonnes : Garder · Fichier · Preuve · Verdict · Format · Débit · Durée · Dossier · Rekordbox,
-   calculées pour la zone C de 920 px (inspecteur ouvert, fenêtre de 1440) : 824 px de rangée. */
-.sift-dups-main{--sift-dups-cols:40px minmax(0,1.6fr) 64px 96px 44px 64px 40px minmax(0,1fr) 76px;display:flex;flex-direction:column;min-height:100%}
-/* Ancre de la feuille d'application : collante, de hauteur nulle, en tête de la table. La zone C
-   défile, la feuille reste en haut de ce qu'on voit sans pousser la table ; en absolu sur un hôte
-   non positionné, elle s'ancrait à la fenêtre et couvrait la barre (revue du 2026-10-05). */
-.sift-dups-sheet-anchor{position:sticky;top:calc(-1 * var(--content-pad, 0px));height:0;z-index:var(--z-sheet)}
-.sift-lib-thead.sift-dups-row,.lr.sift-dups-row{display:grid;grid-template-columns:var(--sift-dups-cols);column-gap:var(--space-8);align-items:center}
-.sift-dups-r{text-align:right}
-.sift-dups-ck{width:16px;height:16px;margin:0;flex:none;accent-color:var(--color-accent-fill);border-radius:var(--border-radius-xs)}
-.sift-dups-keep{display:flex;align-items:center}
-/* Encre de différence : par colonne et par groupe. Les copies diffèrent : encre primaire ; elles
-   sont identiques : tertiaire. Pas de couleur — l'ambre reste à la vigilance (le « Delta Values »
-   orange de dupeGuru, transposé en encre). */
+/* ---- Doublons, option B (2026-10-30, `docs/ui-specs/doublons.md` § Layout) ----
+   La file de tri de Revue appliquée aux groupes : la colonne de file reprend `.queue` / `.qi` /
+   `.sift-qhead` tels quels, la boîte reprend celle de Revue (`.sift-player-row`, ses emplacements
+   `#filbox-settings` / `#filbox-foot`). Ne vivent ici que la ligne de groupe, la grille de
+   comparaison et sa rangée « Issue ». L'ancienne table de l'hybride du 2026-10-05 (grille à neuf
+   colonnes, inspecteur comparé) est retirée avec ce bloc : son historique est dans `git log`.
+   Préfixe au pluriel exprès : `.sift-dup-banner*` (bandeau de Revue) existe déjà. */
+/* Ancre de la feuille d'application du Lot : de hauteur nulle, en tête de la boîte, qui ne défile
+   pas — la feuille s'y pose sans pousser le résumé. */
+.sift-dups-sheet-anchor{position:relative;height:0;z-index:var(--z-sheet)}
+/* Encre de différence : ce qui diffère d'une copie à l'autre en primaire, l'identique en
+   tertiaire. Pas de couleur — l'ambre reste à la vigilance (le « Delta Values » orange de
+   dupeGuru, transposé en encre). */
 .sift-dups-diff{color:var(--color-text-primary)}
 .sift-dups-same{color:var(--color-text-tertiary)}
-/* Nom de fichier : troncature AU MILIEU qui garde « (Version).ext » — la version est ce qui
-   distingue un remix. */
-.sift-dups-file{display:flex;min-width:0;white-space:nowrap}
-.sift-dups-file-a{overflow:hidden;text-overflow:ellipsis;min-width:0}
-.sift-dups-file-b{flex:none;white-space:pre}
-.sift-dups-mark{flex:none;margin-left:var(--space-8);font-size:var(--text-sm);font-weight:500;color:var(--color-text-warning)}
-.sift-dups-num{font-variant-numeric:tabular-nums;white-space:nowrap}
-.sift-dups-dur{font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
-.sift-lib-thead .sift-dups-dur{font-family:var(--font-ui)}
-.sift-dups-where{display:flex;align-items:center;gap:var(--space-6);min-width:0}
-.sift-dups-where-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.sift-dups-rkb{display:flex;align-items:center;gap:var(--space-4);white-space:nowrap;min-width:0}
-.sift-dups-rkb i{font-size:var(--text-base);flex:none}
 .sift-dups-warn{color:var(--color-text-warning)}
-/* Rangée de groupe : la graisse et l'ESPACE la distinguent, jamais un filet ni un bouton
-   (components.md, rangée de table). Le contenu se cale en bas de ses 32 px : l'air vient au-dessus
-   du titre, contre le groupe précédent. Mesuré sur la maquette : 32,0 px, comme une copie (avec un
-   padding-top de 12, elle faisait 33,4 et décalait la virtualisation). */
-.lr.sift-dups-hd{align-items:end;padding-top:0;padding-bottom:var(--space-4)}
-.sift-dups-title{grid-column:1 / 3;display:flex;min-width:0;white-space:nowrap;font-size:var(--text-md);font-weight:600;color:var(--color-text-primary)}
-.sift-dups-title-a{overflow:hidden;text-overflow:ellipsis;min-width:0}
-.sift-dups-title-b{flex:none;white-space:pre}
-.sift-dups-proof{grid-column:3;font-size:var(--text-sm);font-weight:500;color:var(--color-text-secondary);white-space:nowrap}
-.sift-dups-meta{grid-column:4 / 10;display:flex;align-items:baseline;gap:var(--space-16);min-width:0;font-size:var(--text-sm)}
-.sift-dups-nature{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-text-tertiary)}
-.sift-dups-effect{margin-left:auto;flex:none;white-space:nowrap;color:var(--color-text-secondary);font-variant-numeric:tabular-nums}
-/* Pied de zone C : la légende clavier de Revue sur le bord de conduite des rangées ; filet haut
-   qui borne, comme la rangée de statut de la file (revue.md). Collé en bas de la zone qui défile. */
-.sift-dups-foot{position:sticky;bottom:calc(-1 * var(--content-pad, 0px));margin-top:auto;flex:none;min-height:var(--row-h);display:flex;align-items:center;padding:0 var(--space-24);background:var(--color-background-primary);border-top:1px solid var(--color-border-tertiary)}
-/* La copie ouverte contre la comparée (panneau Details de dupeGuru, en encre). */
-.sift-dups-cmp-sec{margin-top:var(--space-24)}
-.sift-dups-cmp-proof{margin-top:var(--space-4);font-size:var(--text-sm);color:var(--color-text-tertiary)}
-.sift-dups-cmp{display:grid;grid-template-columns:76px minmax(0,1fr) minmax(0,1fr);column-gap:var(--space-8);row-gap:var(--space-6);margin-top:var(--space-12);font-size:var(--text-md);align-items:baseline}
-.sift-dups-cmp-h,.sift-dups-cmp-l{font-size:var(--text-sm);color:var(--color-text-tertiary)}
-.sift-dups-cmp-v{min-width:0;overflow-wrap:anywhere}
-.sift-dups-why{margin-top:var(--space-12);font-size:var(--text-md);color:var(--color-text-secondary)}
-.sift-dups-rest-h{margin-top:var(--space-24)}
+/* Ligne de groupe de la file : même structure que la ligne de Revue (`queue-panel.ts`), dont les
+   styles sont en ligne — ici en règles, la ligne étant rendue par un module pur. */
+.sift-dupq-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.sift-dupq-line{display:flex;align-items:center;gap:var(--space-6);min-width:0}
+.sift-dupq-title{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.sift-dupq-rkb{flex:none;color:var(--color-text-tertiary)}
+/* La liste de groupes défile chez elle, comme `#ql`. */
+#dql{flex:1;min-height:0;overflow-y:scroll;scrollbar-gutter:stable;padding-right:var(--space-8);scrollbar-color:transparent transparent}
+#dql:hover{scrollbar-color:var(--color-border-secondary) transparent}
+#dql:focus-visible{outline:none}
+#dqcol{border:0;border-right:1px solid var(--color-border-tertiary);border-radius:0;width:var(--pane-w)}
+/* La boîte : le lecteur de Revue occupe la zone, la grille et le pied vivent dans ses emplacements. */
+.sift-dupb{flex:1;min-height:0;display:flex;flex-direction:column}
+.sift-dupb-report{flex:1;min-height:0;display:flex;flex-direction:column}
+.sift-dupb-facts{display:flex;justify-content:space-between;gap:var(--space-12);margin-bottom:var(--space-12);font-size:var(--text-sm);color:var(--color-text-tertiary)}
+.sift-dupb-proof{flex:none;font-weight:500;color:var(--color-text-secondary)}
+/* La grille : une colonne d'étiquettes fixe, puis une colonne par copie. Au-delà de trois copies,
+   les colonnes gardent leur largeur plancher et la grille défile ; l'étiquette reste en place
+   (décision 2 du 2026-10-30). Le fond de l'étiquette collante est celui de la boîte
+   (`.sift-player-row`), sans quoi les colonnes défileraient visibles sous elle. */
+.sift-dupb-scroll{overflow-x:auto}
+.sift-dupb-grid{display:grid;grid-template-columns:var(--dupb-label-w) repeat(var(--dupb-cols),minmax(var(--dupb-col-w),1fr));font-size:var(--text-md);--dupb-label-w:104px;--dupb-col-w:208px}
+.sift-dupb-label{position:sticky;left:0;z-index:1;background:var(--color-background-queue);padding:var(--space-6) var(--space-12) var(--space-6) 0;font-size:var(--text-sm);color:var(--color-text-tertiary);align-self:stretch}
+.sift-dupb-cell{min-width:0;padding:var(--space-6) var(--space-12);overflow-wrap:anywhere;cursor:default}
+.sift-dupb-cell i{margin-right:var(--space-4)}
+/* La colonne sous le curseur porte le fond de sélection, arrondi en tête et en pied de colonne. */
+.sift-dupb-cell.cur{background:var(--overlay-selected)}
+.sift-dupb-head.cur{border-radius:var(--border-radius-md) var(--border-radius-md) 0 0}
+.sift-dupb-issue-cell.cur{border-radius:0 0 var(--border-radius-md) var(--border-radius-md)}
+.sift-dupb-head{display:flex;flex-direction:column;gap:2px;padding-top:var(--space-8);padding-bottom:var(--space-8)}
+.sift-dupb-where{display:flex;align-items:center;gap:var(--space-6);min-width:0;font-size:var(--text-sm);color:var(--color-text-secondary)}
+.sift-dupb-n{flex:none;min-width:var(--space-16);height:var(--space-16);display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-xs);font-size:var(--text-xs)}
+.sift-dupb-dir{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.sift-dupb-file{font-weight:500}
+.sift-dupb-state{font-size:var(--text-sm);color:var(--color-text-tertiary)}
+.sift-dupb-rec{font-size:var(--text-sm);color:var(--color-text-secondary)}
+.sift-dupb-rec b{font-weight:600;color:var(--color-text-primary)}
+.sift-dupb-mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+/* Issue — « on GARDE ou on SUPPRIME ? » (demande du 2026-10-30) : le mot et son glyphe, jamais
+   une case. Gardée en primaire 600 ; Corbeille à l'encre d'avertissement ; Introuvable et
+   Tronquée en tertiaire, inertes. Un bouton nu : la cellule entière est la cible du clic. */
+.sift-dupb-issue-cell{padding-top:var(--space-8);padding-bottom:var(--space-8)}
+.sift-dupb-issue{display:inline-flex;align-items:center;gap:var(--space-4);padding:0;border:0;background:none;font:inherit;cursor:pointer}
+.sift-dupb-issue i{margin-right:0}
+.sift-dupb-issue--kept{color:var(--color-text-primary);font-weight:600}
+.sift-dupb-issue--trash{color:var(--color-text-warning)}
+.sift-dupb-issue--off{color:var(--color-text-tertiary);cursor:default}
+.sift-dupb-consequence{margin-top:var(--space-12);font-size:var(--text-md);color:var(--color-text-secondary)}
+.sift-dupb-consequence + .sift-dupb-consequence{margin-top:var(--space-4)}
+/* Mode Lot : le résumé de la sélection, gabarit `.sift-bsel` de Revue. */
+.sift-dupb-lot{padding:var(--space-16)}
+.sift-dupb-lot-actions{margin-top:var(--space-16)}
 /* Titre de page accessible, invisible à l'œil. Mesuré le 2026-08-05 : l'application ne
    contenait AUCUN `<h1>`–`<h6>`, ni dans `index.html`, ni dans `app.js`, ni dans un seul `.ts`,
    et aucun repli `role="heading"`/`aria-level` — un lecteur d'écran n'avait donc aucun plan de

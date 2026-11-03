@@ -23,10 +23,11 @@ export const GROUP_FILTERS: readonly GroupFilter[] = [
   "rekordbox",
 ];
 
-/** Le plan initial : les cases cochées par la règle. */
+/** Le plan initial : les copies gardées par la règle. Un groupe À vérifier garde TOUTES ses copies
+ *  (spec § États, option B du 2026-10-30) : deux versions possibles, rien ne part par défaut. */
 export function initialPlan(groups: readonly DupScreenGroup[]): Plan {
   const plan: Plan = new Map();
-  for (const g of groups) for (const c of g.copies) plan.set(c.id, c.keep);
+  for (const g of groups) for (const c of g.copies) plan.set(c.id, g.to_check ? c.keepable : c.keep);
   return plan;
 }
 
@@ -45,80 +46,9 @@ export function rekordboxPlaylists(c: DupScreenCopy): number | null {
   return c.rekordbox.state === "present" ? c.rekordbox.playlists : null;
 }
 
-/** Ce que le plan ferait d'un groupe. */
-interface GroupEffect {
-  /** Les copies qui partiraient à la corbeille. Une copie absente ne part jamais. */
-  toTrash: DupScreenCopy[];
-  kept: number;
-  bytes: number;
-  /** Copies jouées par Rekordbox parmi celles qui partiraient, et leurs playlists. */
-  rekordboxCopies: number;
-  rekordboxPlaylists: number;
-  /** Le groupe entre dans l'application : sa preuve l'autorise (ou l'utilisateur l'a tranché),
-   *  et au moins une copie reste gardée — jamais un groupe vidé de toutes ses copies. */
-  inPlan: boolean;
-}
 
-/** `touched` : les groupes que l'utilisateur a modifiés. Un groupe À vérifier n'entre dans
- *  l'application qu'une fois tranché à la main (spec § Interactions, « Geste de masse »). */
-export function groupEffect(g: DupScreenGroup, plan: Plan, touched: ReadonlySet<number>): GroupEffect {
-  const kept = g.copies.filter((c) => isKept(plan, c)).length;
-  const toTrash = g.copies.filter((c) => !isKept(plan, c) && !c.missing);
-  let bytes = 0;
-  let rekordboxCopies = 0;
-  let rekordboxPlaylistsTotal = 0;
-  for (const c of toTrash) {
-    bytes += c.size_bytes ?? 0;
-    const p = rekordboxPlaylists(c);
-    if (p != null) {
-      rekordboxCopies += 1;
-      rekordboxPlaylistsTotal += p;
-    }
-  }
-  const inPlan = kept >= 1 && toTrash.length > 0 && (!g.to_check || touched.has(g.id));
-  return { toTrash, kept, bytes, rekordboxCopies, rekordboxPlaylists: rekordboxPlaylistsTotal, inPlan };
-}
 
-/** Le total de l'application, sur les groupes donnés. `keepRekordbox` : la case de la
- *  confirmation « Garder aussi les copies que Rekordbox joue », cochée par défaut. */
-interface PlanTotals {
-  copies: DupScreenCopy[];
-  bytes: number;
-  groups: number;
-  /** Copies jouées par Rekordbox que le plan enverrait, AVANT la case de la confirmation. */
-  rekordboxCopies: number;
-  /** Groupes À vérifier laissés hors du plan. */
-  toCheckLeft: number;
-}
 
-export function planTotals(
-  groups: readonly DupScreenGroup[],
-  plan: Plan,
-  touched: ReadonlySet<number>,
-  keepRekordbox: boolean,
-): PlanTotals {
-  const copies: DupScreenCopy[] = [];
-  let bytes = 0;
-  let nGroups = 0;
-  let rekordboxCopies = 0;
-  let toCheckLeft = 0;
-  for (const g of groups) {
-    const e = groupEffect(g, plan, touched);
-    if (!e.inPlan) {
-      if (g.to_check && !touched.has(g.id)) toCheckLeft += 1;
-      continue;
-    }
-    rekordboxCopies += e.rekordboxCopies;
-    const sent = keepRekordbox ? e.toTrash.filter((c) => rekordboxPlaylists(c) == null) : e.toTrash;
-    if (sent.length === 0) continue;
-    nGroups += 1;
-    for (const c of sent) {
-      copies.push(c);
-      bytes += c.size_bytes ?? 0;
-    }
-  }
-  return { copies, bytes, groups: nGroups, rekordboxCopies, toCheckLeft };
-}
 
 /** Les copies envoyées que Rekordbox n'a pas pu confirmer absentes (`unverified`) : la
  *  confirmation les annonce avec la raison — Rekordbox ouvert, ou XML d'export seul. Elles ne sont
@@ -181,18 +111,6 @@ export function differingFields(g: DupScreenGroup): Set<DiffField> {
   return out;
 }
 
-/** La copie contre laquelle l'inspecteur compare `openedId` (spec § Zone D) : la première copie
- *  gardée, dans l'ordre de la règle ; et si c'est la gardée qu'on ouvre, la meilleure des autres
- *  (tranché sur wireframe le 2026-10-05). `null` si le groupe n'a pas d'autre copie. */
-export function compareTarget(g: DupScreenGroup, openedId: number, plan: Plan): DupScreenCopy | null {
-  const opened = g.copies.find((c) => c.id === openedId);
-  if (!opened) return null;
-  if (!isKept(plan, opened)) {
-    const kept = g.copies.find((c) => c.id !== openedId && isKept(plan, c));
-    if (kept) return kept;
-  }
-  return g.copies.find((c) => c.id !== openedId) ?? null;
-}
 
 /** « Préférer ce dossier » : dans chaque groupe où une copie de `dir` est à égalité de qualité
  *  avec la meilleure, c'est elle qui est gardée, et les autres copies à égalité sont décochées —
@@ -300,22 +218,7 @@ export function filterCounts(groups: readonly DupScreenGroup[]): Record<GroupFil
   return counts;
 }
 
-/** Une rangée de la table virtualisée : l'en-tête d'un groupe, ou une de ses copies. Toutes font
- *  la même hauteur (spec § Zone C : une seule hauteur pour la liste virtualisée). */
-export type DupRow =
-  | { kind: "group"; group: DupScreenGroup; index: number }
-  | { kind: "copy"; group: DupScreenGroup; copy: DupScreenCopy; index: number };
 
-/** Les rangées, en-tête puis copies, avec un index CONTINU — la zébrure suit l'index, en-têtes
- *  compris (spec § Zone C, « fonds alternés par index continu »). */
-export function flattenRows(groups: readonly DupScreenGroup[]): DupRow[] {
-  const rows: DupRow[] = [];
-  for (const g of groups) {
-    rows.push({ kind: "group", group: g, index: rows.length });
-    for (const c of g.copies) rows.push({ kind: "copy", group: g, copy: c, index: rows.length });
-  }
-  return rows;
-}
 
 /** Ce qui fait garder `kept` plutôt que `other`, pour la phrase de l'inspecteur. Suit l'ordre de
  *  la règle (`doublons.rs::qualite`, puis les départages) ; `user` et `rekordbox` disent qu'une
@@ -360,36 +263,103 @@ export function ruleReason(g: DupScreenGroup, kept: DupScreenCopy, other: DupScr
   return "tie";
 }
 
-/** Les totaux du résumé de repos (zone D). */
-interface RestSummary {
-  groups: number;
-  extraCopies: number;
-  inPlan: number;
-  bytes: number;
-  identical: number;
-  sameSound: number;
-  sameName: number;
-  toCheck: number;
-  withRekordbox: number;
+
+
+// ---------------------------------------------------------------------------
+// Option B — file de tri (spec § Layout, 2026-10-30)
+// ---------------------------------------------------------------------------
+
+/** Ce que deviendra une copie si l'on valide le groupe : la rangée « Issue » de la grille, qui
+ *  répond à « on GARDE ou on SUPPRIME ? ». `missing` et `truncated` ne se basculent pas. */
+export type Issue = "kept" | "trash" | "missing" | "truncated";
+
+export function copyIssue(c: DupScreenCopy, plan: Plan): Issue {
+  if (c.missing) return "missing";
+  if (!keepable(c)) return "truncated";
+  return isKept(plan, c) ? "kept" : "trash";
 }
 
-export function restSummary(
-  groups: readonly DupScreenGroup[],
-  plan: Plan,
-  touched: ReadonlySet<number>,
-): RestSummary {
-  const counts = filterCounts(groups);
-  const totals = planTotals(groups, plan, touched, true);
-  const extraCopies = groups.reduce((n, g) => n + g.copies.filter((c) => !c.missing).length - 1, 0);
-  return {
-    groups: groups.length,
-    extraCopies: Math.max(0, extraCopies),
-    inPlan: totals.copies.length,
-    bytes: totals.bytes,
-    identical: counts.identical,
-    sameSound: counts.same_sound,
-    sameName: counts.same_name,
-    toCheck: counts.to_check,
-    withRekordbox: counts.rekordbox,
-  };
+/** Ce que ferait Entrée sur un groupe. Les numéros de copie sont ceux de la grille (1 = la
+ *  première colonne, l'ordre de `g.copies`). */
+interface GroupOutcome {
+  kept: number[];
+  trashed: number[];
+  /** Les copies qui partiraient, dans l'ordre des colonnes. */
+  trash: DupScreenCopy[];
+  bytes: number;
+  /** Les copies qui partiraient et que Rekordbox joue, avec leurs playlists. */
+  rekordbox: { n: number; playlists: number }[];
+}
+
+export function groupOutcome(g: DupScreenGroup, plan: Plan): GroupOutcome {
+  const out: GroupOutcome = { kept: [], trashed: [], trash: [], bytes: 0, rekordbox: [] };
+  g.copies.forEach((c, i) => {
+    const issue = copyIssue(c, plan);
+    if (issue === "kept") out.kept.push(i + 1);
+    if (issue !== "trash") return;
+    out.trashed.push(i + 1);
+    out.trash.push(c);
+    out.bytes += c.size_bytes ?? 0;
+    const p = rekordboxPlaylists(c);
+    if (p != null) out.rekordbox.push({ n: i + 1, playlists: p });
+  });
+  return out;
+}
+
+/** Bascule une copie entre Gardée et Corbeille (clic sur sa cellule Issue, touche G). Refusée —
+ *  plan inchangé, `false` — pour une copie qui ne se garde pas, et pour la DERNIÈRE copie gardée :
+ *  un groupe ne se vide jamais de toutes ses copies. */
+export function toggleIssue(g: DupScreenGroup, plan: Plan, copyId: number): boolean {
+  const c = g.copies.find((x) => x.id === copyId);
+  if (!c || !keepable(c)) return false;
+  const kept = isKept(plan, c);
+  if (kept && groupOutcome(g, plan).kept.length <= 1) return false;
+  plan.set(c.id, !kept);
+  return true;
+}
+
+/** La colonne sous le curseur à l'ouverture : la première copie gardée (la recommandée, `g.copies`
+ *  venant meilleure d'abord), sinon la première. */
+export function recommendedCopy(g: DupScreenGroup, plan: Plan): DupScreenCopy {
+  return g.copies.find((c) => copyIssue(c, plan) === "kept") ?? g.copies[0];
+}
+
+/** Les formats d'un groupe, pour la seconde ligne de la file : « FLAC, MP3 », dans l'ordre où ils
+ *  paraissent, sans doublon. */
+export function groupFormats(g: DupScreenGroup): string {
+  return [...new Set(g.copies.map((c) => c.format.toUpperCase()))].join(", ");
+}
+
+/** Le résumé du mode Lot (spec § Zone C en mode Lot). Un groupe À vérifier est EXCLU — pas de
+ *  geste de masse sur une ressemblance. Les copies que Rekordbox joue sont comptées à part : la
+ *  confirmation les garde d'office, case cochée. */
+interface LotSummary {
+  groups: number;
+  copies: DupScreenCopy[];
+  bytes: number;
+  /** Groupes où une copie est à égalité avec la meilleure : la règle a tranché. */
+  ties: number;
+  rekordboxKept: number;
+  excluded: number;
+}
+
+export function lotSummary(selected: readonly DupScreenGroup[], plan: Plan, keepRekordbox: boolean): LotSummary {
+  const s: LotSummary = { groups: 0, copies: [], bytes: 0, ties: 0, rekordboxKept: 0, excluded: 0 };
+  for (const g of selected) {
+    if (g.to_check) {
+      s.excluded += 1;
+      continue;
+    }
+    const o = groupOutcome(g, plan);
+    const sent = keepRekordbox ? o.trash.filter((c) => rekordboxPlaylists(c) == null) : o.trash;
+    if (keepRekordbox) s.rekordboxKept += o.trash.length - sent.length;
+    if (!sent.length) continue;
+    s.groups += 1;
+    if (g.copies.some((c) => c.tied_with_best)) s.ties += 1;
+    for (const c of sent) {
+      s.copies.push(c);
+      s.bytes += c.size_bytes ?? 0;
+    }
+  }
+  return s;
 }
