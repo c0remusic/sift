@@ -326,6 +326,8 @@ pub fn apply_tags(
     // SAME set filing writes. On failure we stop; nothing is journaled. Title includes the version
     // suffix via naming::tag_title (same as filing.rs, same as the rendered filename) — previously
     // this passed &edited.title alone, silently dropping version from the actual ID3 tag.
+    // Tenu jusqu'à la fin de la fonction, donc au-delà du recalage plus bas (#73).
+    let _hold = OwnWriteHold::new(&path);
     crate::tagging::write_tags_full(
         &path,
         &edited.artist,
@@ -424,6 +426,48 @@ struct InFlightFilings {
     tracks: HashSet<i64>,
     sources: crate::library::Reservations,
     dests: crate::library::Reservations,
+    /// Fichiers dont Sift réécrit les tags en ce moment (`OwnWriteHold`). Ensemble à part : rendre
+    /// une écriture de tags ne doit jamais libérer la source ou la destination d'un rangement.
+    writes: crate::library::Reservations,
+}
+
+/// Tient `path` « en vol » le temps d'une réécriture de tags par Sift elle-même, jusqu'au
+/// `restamp_after_own_write` qui la suit (issue #73, suite). Le recalage seul ne suffisait pas : sur
+/// un gros AIFF, la réécriture dure plus que les ~500 ms du watcher, qui voyait le fichier changé
+/// AVANT le recalage et repassait la piste rangée en file — mesuré le 2026-11-03 sur un AIFF de
+/// 98 Mo, le seul des dix fichiers corrigés à revenir en `pending`. Tenu, le chemin est ignoré par
+/// le watcher (`is_path_in_flight`) ; rendu, l'événement tardif retrouve une taille et une date
+/// déjà recalées et ne fait rien. Rendu au `Drop`, donc aussi sur un `?` ou une panique.
+pub(crate) struct OwnWriteHold {
+    path: Option<String>,
+}
+
+impl OwnWriteHold {
+    pub(crate) fn new(path: &str) -> Self {
+        match inflight().lock() {
+            // `false` : une autre écriture le tient déjà, c'est elle qui le rendra.
+            Ok(mut g) => Self {
+                path: g.writes.insert(path).then(|| path.to_string()),
+            },
+            Err(e) => {
+                log::error!("own write: in-flight registry poisoned, {path} not held: {e}");
+                Self { path: None }
+            }
+        }
+    }
+}
+
+impl Drop for OwnWriteHold {
+    fn drop(&mut self) {
+        if let Some(p) = self.path.take() {
+            match inflight().lock() {
+                Ok(mut g) => {
+                    g.writes.remove(&p);
+                }
+                Err(e) => log::error!("own write: in-flight registry poisoned releasing {p}: {e}"),
+            }
+        }
+    }
 }
 
 fn inflight() -> &'static Mutex<InFlightFilings> {
@@ -464,7 +508,7 @@ fn is_filing_inflight(track_id: i64) -> Result<bool, String> {
 /// then behaves as it did before this registry was consulted, which is logged.
 pub(crate) fn is_path_in_flight(path: &str) -> bool {
     match inflight().lock() {
-        Ok(g) => g.sources.contains(path) || g.dests.contains(path),
+        Ok(g) => g.sources.contains(path) || g.dests.contains(path) || g.writes.contains(path),
         Err(e) => {
             log::error!("watcher: in-flight filing registry poisoned: {e}");
             false
@@ -1895,6 +1939,57 @@ mod tests {
         assert!(is_path_in_flight(dest), "la destination est tenue");
         release_filing(id, src, dest);
         assert!(!is_path_in_flight(src) && !is_path_in_flight(dest));
+    }
+
+    /// #73, suite : une réécriture de tags par Sift cache son fichier au watcher tant qu'elle est
+    /// tenue. Une seconde prise du même chemin ne le rend pas en tombant — seule la première le
+    /// rend. Et rendre une écriture ne libère pas la source d'un rangement.
+    #[test]
+    fn an_own_tag_write_hides_its_file_from_the_watcher_until_dropped() {
+        let p = "C:/nowhere/own-write.aiff";
+        assert!(!is_path_in_flight(p));
+        let first = OwnWriteHold::new(p);
+        assert!(is_path_in_flight(p), "tenu pendant l'écriture");
+        drop(OwnWriteHold::new(p));
+        assert!(
+            is_path_in_flight(p),
+            "la seconde prise ne rend pas le chemin"
+        );
+        drop(first);
+        assert!(!is_path_in_flight(p), "rendu au Drop");
+
+        let (id, src, dest) = (
+            -7302i64,
+            "C:/nowhere/own-write-src.flac",
+            "C:/nowhere/own-w.aiff",
+        );
+        assert_eq!(reserve_filing(id, src, dest), Ok(()));
+        drop(OwnWriteHold::new(src));
+        assert!(is_path_in_flight(src), "la source du rangement reste tenue");
+        release_filing(id, src, dest);
+    }
+
+    /// Les deux commandes qui réécrivent les tags d'une piste prennent la prise AVANT d'écrire :
+    /// sinon le watcher peut voir le fichier changé avant le recalage et dé-ranger la piste.
+    #[test]
+    fn tag_writing_commands_hold_the_file_before_writing() {
+        for (source, debut, ecriture) in [
+            (
+                include_str!("ipc_filing.rs"),
+                "pub fn apply_tags(",
+                "crate::tagging::write_tags_full(",
+            ),
+            (
+                include_str!("ipc_library.rs"),
+                "pub fn update_metadata(",
+                "update_metadata_write_file(&path",
+            ),
+        ] {
+            let corps = &source[source.find(debut).expect(debut)..];
+            let prise = corps.find("OwnWriteHold::new(").expect("prise absente");
+            let ecrit = corps.find(ecriture).expect("écriture absente");
+            assert!(prise < ecrit, "{debut} : la prise doit précéder l'écriture");
+        }
     }
 
     /// Mirrors shared/contracts.ts's `TrackFileOutcome` (the `file:track:done` payload). Exhaustive

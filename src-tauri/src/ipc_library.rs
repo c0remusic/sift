@@ -161,6 +161,8 @@ pub fn update_metadata(
         let conn = db::lock_conn(&conn)?;
         update_metadata_path(&conn, track_id)?
     };
+    // Tenu de la réécriture jusqu'au recalage de `update_metadata_commit` (#73, suite).
+    let _hold = crate::ipc_filing::OwnWriteHold::new(&path);
     let snapshot = update_metadata_write_file(&path, &edit)?;
     let conn = db::lock_conn(&conn)?;
     update_metadata_commit(&conn, track_id, &edit, &path, &snapshot)
