@@ -86,7 +86,9 @@ impl std::fmt::Display for FilingError {
                 "destination déjà occupée par une autre piste rangée: {p}",
                 "destination already taken by another filed track: {p}"
             )),
-            // Affiché lui aussi dans le compte rendu du mode Lot.
+            // Revue le montre si le refus remonte malgré le bouton désactivé. Le mode Lot ne l'affiche
+            // pas : un refus de planification y renvoie la piste en validation et n'est que journalisé
+            // (`ipc_filing::file_batch`) — et un lot ne range qu'une fiche verte ou identifiée.
             FilingError::MissingArtist => f.write_str(&crate::tr!(
                 "artiste vide : renseigne-le avant de convertir",
                 "empty artist: fill it in before converting"
