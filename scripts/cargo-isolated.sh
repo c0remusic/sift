@@ -21,5 +21,18 @@ DEFAULT_TARGET_DIR="${LOCALAPPDATA:-$HOME/AppData/Local}/Temp/claude/sift-cargo-
 export CARGO_TARGET_DIR="${SIFT_ISOLATED_TARGET_DIR:-$DEFAULT_TARGET_DIR}"
 mkdir -p "$CARGO_TARGET_DIR"
 
+# The script already runs from src-tauri/, so a `--manifest-path src-tauri/Cargo.toml` copied from
+# CLAUDE.md points nowhere — and that mistake has been read as a green gate twice (2026-09-16,
+# then 2026-11-03 on a benchmark run). Refuse it loudly instead of letting cargo fail in the tail
+# of a log nobody reads.
+for arg in "$@"; do
+  case "$arg" in
+    --manifest-path|--manifest-path=*)
+      echo "cargo-isolated.sh: drop --manifest-path, the script already runs in src-tauri/" >&2
+      exit 2
+      ;;
+  esac
+done
+
 cd "$REPO_ROOT/src-tauri"
 exec cargo "$@"

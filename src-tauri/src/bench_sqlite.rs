@@ -1103,3 +1103,144 @@ fn bench_ce_que_cadrage_apporte() {
         );
     }
 }
+
+/// DÉBIT DU VRAI POOL d'analyse, et délai d'un premier verdict au repos (#98).
+///
+/// Deux budgets de la carte « Sift paraît instantané » se jugent ici : une nouvelle piste reçoit
+/// son premier verdict en moins de 5 s, et toute la bibliothèque s'analyse en ≈ 1 h (≈ 140 pistes
+/// par minute). `bench_ou_part_le_temps` découpe UNE analyse ; il ne dit ni ce que donne le pool
+/// réel, ni ce qu'attend une piste neuve.
+///
+/// Ce banc ne réimplémente rien de la production : même taille de pool
+/// (`worker::analysis_pool_size`), même priorité abaissée sur chaque fil
+/// (`worker::abaisse_priorite_du_fil_courant`), même appel (`analysis::analyze(path, false)`,
+/// celui de `worker_loop`). Il n'écrit PAS en base : l'attente du verrou SQLite se mesure à part
+/// (`bench_sqlite_lock_wait_under_analysis_load`).
+///
+/// Deux phases :
+///   1. **premier verdict au repos** : un fichier de chaque format, seul, machine au repos. C'est
+///      le délai qu'une piste neuve attend aujourd'hui, hors attente du watcher (~500 ms, en tête
+///      de `watcher.rs`) et hors file : l'analyse complète est le seul chemin vers un verdict ;
+///   2. **débit du pool** : tous les fichiers, les fils du pool tirant dans une file commune.
+///      Débit en pistes par minute, et latence par format.
+///
+/// `SIFT_BENCH_TRACKS_DIR` = dossier de vrais fichiers, idéalement stratifié comme la
+/// bibliothèque ; `SIFT_BENCH_MAX` = combien (tous par défaut).
+/// Lancement : `cargo test --release -- --ignored --nocapture bench_debit_du_pool`.
+#[test]
+#[ignore]
+fn bench_debit_du_pool() {
+    let Ok(dir) = std::env::var("SIFT_BENCH_TRACKS_DIR") else {
+        println!("\n=== débit du pool : IGNORÉ ===");
+        println!("  définir SIFT_BENCH_TRACKS_DIR sur un dossier de vrais fichiers audio");
+        return;
+    };
+    let max_files: usize = std::env::var("SIFT_BENCH_MAX")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(usize::MAX);
+    const EXTS: [&str; 7] = ["mp3", "flac", "wav", "aif", "aiff", "m4a", "ogg"];
+    fn ext_of(p: &std::path::Path) -> String {
+        p.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .unwrap_or_default()
+    }
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .expect("lecture du dossier")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| EXTS.contains(&ext_of(p).as_str()))
+        .collect();
+    files.sort();
+    files.truncate(max_files);
+    println!("\n=== débit du pool d'analyse ===");
+    if files.is_empty() {
+        println!("  aucun fichier audio dans {dir}");
+        return;
+    }
+
+    // 1. Premier verdict au repos : le premier fichier de chaque format, seul.
+    println!("\n  -- premier verdict, machine au repos (un fichier seul par format) --");
+    let mut vus: Vec<String> = Vec::new();
+    for f in &files {
+        let ext = ext_of(f);
+        if vus.contains(&ext) {
+            continue;
+        }
+        vus.push(ext.clone());
+        let t = Instant::now();
+        let r = crate::analysis::analyze(&f.to_string_lossy(), false);
+        println!(
+            "  {ext:>5}  {:>7.2} s  {}",
+            t.elapsed().as_secs_f64(),
+            if r.is_ok() { "ok" } else { "ÉCHEC" }
+        );
+    }
+
+    // 2. Débit du pool : la vraie taille, la vraie priorité, une file commune.
+    // `SIFT_BENCH_POOL` remplace la taille de production, pour comparer : les bancs ouvrent déjà
+    // leurs propres fils (`std::thread::scope`), donc N fils du pool ne valent pas N fois un.
+    let n = std::env::var("SIFT_BENCH_POOL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(crate::worker::analysis_pool_size);
+    let suivant = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let files = Arc::new(files);
+    let resultats: Arc<Mutex<Vec<(String, f64, bool)>>> = Arc::new(Mutex::new(Vec::new()));
+    let t0 = Instant::now();
+    let fils: Vec<_> = (0..n)
+        .map(|_| {
+            let (suivant, files, resultats) = (suivant.clone(), files.clone(), resultats.clone());
+            std::thread::spawn(move || {
+                crate::worker::abaisse_priorite_du_fil_courant();
+                loop {
+                    let i = suivant.fetch_add(1, Ordering::SeqCst);
+                    let Some(f) = files.get(i) else { break };
+                    let t = Instant::now();
+                    let ok = crate::analysis::analyze(&f.to_string_lossy(), false).is_ok();
+                    resultats.lock().expect("verrou des résultats").push((
+                        ext_of(f),
+                        t.elapsed().as_secs_f64(),
+                        ok,
+                    ));
+                }
+            })
+        })
+        .collect();
+    for f in fils {
+        f.join().expect("fil du pool");
+    }
+    let mur = t0.elapsed().as_secs_f64();
+    let res = resultats.lock().expect("verrou des résultats");
+    let echecs = res.iter().filter(|r| !r.2).count();
+    println!(
+        "\n  -- débit : {} fichiers, {n} fils, {mur:.1} s au mur, {echecs} échec(s) --",
+        res.len()
+    );
+    println!(
+        "  {:.1} pistes/min  ({:.3} fichier/s)",
+        res.len() as f64 / mur * 60.0,
+        res.len() as f64 / mur
+    );
+    println!(
+        "  {:>5}  {:>3}  {:>9}  {:>9}",
+        "fmt", "n", "médiane s", "max s"
+    );
+    for ext in EXTS {
+        let mut v: Vec<f64> = res.iter().filter(|r| r.0 == ext).map(|r| r.1).collect();
+        if v.is_empty() {
+            continue;
+        }
+        v.sort_by(|a, b| a.total_cmp(b));
+        println!(
+            "  {ext:>5}  {:>3}  {:>9.2}  {:>9.2}",
+            v.len(),
+            v[v.len() / 2],
+            v[v.len() - 1]
+        );
+    }
+    assert!(
+        echecs < res.len(),
+        "aucune analyse n'a réussi : le débit ne mesure rien"
+    );
+}
