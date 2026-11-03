@@ -65,20 +65,35 @@ fn identify_bloquant(
     let conn = app.state::<Mutex<Connection>>();
     // Chemin sous le verrou, lecture des tags APRÈS l'avoir relâché : une lecture disque ne doit
     // pas geler les autres utilisateurs de la base (même découpage que `ipc_filing::reconcile`).
-    let (token, path) = {
+    let (token, path, duration_s) = {
         let conn = db::lock_conn(&conn)?;
         let token = settings::get(&conn, settings::DISCOGS_TOKEN)
             .map_err(|e| e.to_string())?
             .unwrap_or_default();
         let path = crate::filing::track_path(&conn, track_id).map_err(|e| e.to_string())?;
-        (token, path)
+        let duration_s = track_duration(&conn, track_id).map_err(|e| e.to_string())?;
+        (token, path, duration_s)
     };
     if token.trim().is_empty() {
         return Err("NO_TOKEN".into());
     }
-    let query = build_query(&path, hint.as_ref());
+    let query = Query {
+        duration_s,
+        ..build_query(&path, hint.as_ref())
+    };
     let provider = metadata::discogs::Discogs { token };
     provider.search(&query).map_err(|e| e.code())
+}
+
+/// Durée de la piste telle que l'analyse l'a mesurée (`tracks.duration`), pour départager les mixes
+/// au score de tracklist (T5). `None` quand elle manque ou vaut 0 — 34 lignes portaient
+/// `duration = 0` avant la migration de `db.rs` : une durée nulle n'est pas une mesure.
+fn track_duration(conn: &Connection, track_id: i64) -> rusqlite::Result<Option<f64>> {
+    let d: Option<f64> =
+        conn.query_row("SELECT duration FROM tracks WHERE id=?1", [track_id], |r| {
+            r.get(0)
+        })?;
+    Ok(d.filter(|s| s.is_finite() && *s > 0.0))
 }
 
 /// Demande à Discogs si le jeton enregistré est accepté. Rend les MÊMES codes que `identify`.
@@ -193,6 +208,7 @@ fn build_query_from(
             artist: terms.artist.clone(),
             title: terms.title.clone(),
             version: terms.version.clone(),
+            duration_s: None,
             attempts: ladder.collect(),
         };
     };
@@ -216,6 +232,7 @@ fn build_query_from(
         artist,
         title,
         version: version.or_else(|| terms.version.clone()),
+        duration_s: None,
         attempts,
     }
 }
@@ -905,6 +922,26 @@ mod tests {
             release_id: id.into(),
             source: "discogs".into(),
         }
+    }
+
+    /// T5 : la durée part de `tracks.duration`, et une durée absente ou nulle n'est pas une mesure.
+    #[test]
+    fn la_duree_de_la_requete_vient_de_la_base_et_zero_n_en_est_pas_une() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::run_migrations(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks(id, path, status, duration) VALUES(1, '/a.mp3', 'pending', 372.5);
+             INSERT INTO tracks(id, path, status, duration) VALUES(2, '/b.mp3', 'pending', 0);
+             INSERT INTO tracks(id, path, status) VALUES(3, '/c.mp3', 'pending');",
+        )
+        .unwrap();
+        assert_eq!(track_duration(&conn, 1).unwrap(), Some(372.5));
+        assert_eq!(track_duration(&conn, 2).unwrap(), None);
+        assert_eq!(track_duration(&conn, 3).unwrap(), None);
+        assert!(
+            track_duration(&conn, 99).is_err(),
+            "piste inconnue : erreur, pas None"
+        );
     }
 
     /// Une piste en base sur une COPIE de la fixture, et une pochette en cache (octets

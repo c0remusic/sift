@@ -240,6 +240,10 @@ pub struct Query {
     pub artist: String,
     pub title: String,
     pub version: Option<String>,
+    /// Durée du fichier local en secondes (`tracks.duration`), qui départage au score de
+    /// tracklist deux mixes que les mots confondent (T5). `None` = inconnue : la durée ne compte
+    /// alors ni pour ni contre.
+    pub duration_s: Option<f64>,
     /// Requêtes à tenter, de la plus spécifique à la plus dégradée (voir `search_terms`). Vide =
     /// l'appelant n'en fournit pas et le fournisseur retombe sur `"{artist} {title}"` — c'est le
     /// cas des tests et de tout appelant historique.
