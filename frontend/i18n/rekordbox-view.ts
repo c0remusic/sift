@@ -48,6 +48,7 @@ const fr = {
   // Barre.
   syncSelection: "Synchroniser la sélection",
   syncAll: "Tout synchroniser",
+  search: "Rechercher dans les entrées",
   // Tête.
   xmlFallback: "XML Rekordbox",
   syncUnavailable: "synchronisation indisponible",
@@ -77,8 +78,13 @@ const fr = {
   driftNone: "Dérive : aucune",
   factPending: "En attente :",
   nothingPending: (all: boolean) => `Rien — ${all ? "le XML lié est à jour" : "cette section est à jour"}.`,
+  noMatch: (q: string) => `Aucune entrée ne correspond à « ${q} ».`,
   // Menu contextuel et toasts.
+  syncEntry: "Synchroniser cette entrée",
   ignore: "Ignorer",
+  showInLibrary: "Voir la piste dans Bibliothèque",
+  openLocation: "Ouvrir l'emplacement",
+  openLocationFailed: "Impossible d'ouvrir l'emplacement — le fichier a peut-être bougé",
   actionFailed: "Action impossible — réessaie",
   choiceFailed: "Choix impossible — réessaie",
   /** Sentinelle `AMBIGUITY_STALE` du backend. Même texte que la phrase qu'elle remplace. */
@@ -93,9 +99,21 @@ const fr = {
     " Ferme Rekordbox avant de continuer.",
   confirmSyncButton: "Synchroniser",
   syncing: (n: number) => `Synchronisation de ${plFr(n, "entrée")}…`,
+  syncStep: (i: number, n: number, section: string) => `${section} · ${i} sur ${n}`,
+  stop: "Annuler",
+  stopping: "Arrêt après l'entrée en cours…",
   unknownFailure: "échec inconnu",
-  syncReportFailed: (ok: number, failed: number) =>
-    `${plFr(ok, "entrée synchronisée", "entrées synchronisées")}, ${plFr(failed, "échouée")}`,
+  // Rapport de la feuille — affiché seulement s'il y a un échec ou un arrêt.
+  syncReport: (ok: number, failed: number, left: number) =>
+    [
+      plFr(ok, "entrée synchronisée", "entrées synchronisées"),
+      failed ? plFr(failed, "échouée") : "",
+      left ? `${plFr(left, "non traitée")} — toujours en attente` : "",
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  reportFailed: (n: number) => `${n > 1 ? "Échecs" : "Échec"} (${n})`,
+  close: "Fermer",
   syncReportOk: (ok: number) =>
     `${plFr(ok, "entrée synchronisée", "entrées synchronisées")} — réimporte le XML dans Rekordbox si tu as réexporté.`,
 };
@@ -125,6 +143,7 @@ const en: typeof fr = {
   sectionLoadFailed: "Couldn't load — try again later.",
   syncSelection: "Sync selection",
   syncAll: "Sync all",
+  search: "Search entries",
   xmlFallback: "Rekordbox XML",
   syncUnavailable: "sync unavailable",
   sectionsNoReply: (n) => `${plEn(n, "section")} not responding`,
@@ -150,7 +169,12 @@ const en: typeof fr = {
   driftNone: "Drift: none",
   factPending: "Pending:",
   nothingPending: (all) => `Nothing — ${all ? "the linked XML is up to date" : "this section is up to date"}.`,
+  noMatch: (q) => `No entry matches “${q}”.`,
+  syncEntry: "Sync this entry",
   ignore: "Ignore",
+  showInLibrary: "Show track in Library",
+  openLocation: "Show in folder",
+  openLocationFailed: "Couldn't open the location — the file may have moved",
   actionFailed: "Action failed — try again",
   choiceFailed: "Choice failed — try again",
   ambiguityStale: "This row is no longer ambiguous — reload needed",
@@ -161,8 +185,16 @@ const en: typeof fr = {
     " Close Rekordbox before you continue.",
   confirmSyncButton: "Sync",
   syncing: (n) => `Syncing ${plEn(n, "entry", "entries")}…`,
+  syncStep: (i, n, section) => `${section} · ${i} of ${n}`,
+  stop: "Cancel",
+  stopping: "Stopping after the current entry…",
   unknownFailure: "unknown failure",
-  syncReportFailed: (ok, failed) => `${plEn(ok, "entry", "entries")} synced, ${failed} failed`,
+  syncReport: (ok, failed, left) =>
+    [`${plEn(ok, "entry", "entries")} synced`, failed ? `${failed} failed` : "", left ? `${left} not processed — still pending` : ""]
+      .filter(Boolean)
+      .join(" · "),
+  reportFailed: (n) => `${n === 1 ? "Failure" : "Failures"} (${n})`,
+  close: "Close",
   syncReportOk: (ok) => `${plEn(ok, "entry", "entries")} synced — reimport the XML into Rekordbox if you re-exported.`,
 };
 

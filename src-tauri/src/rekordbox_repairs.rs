@@ -11,6 +11,7 @@
 
 use rusqlite::{Connection, OptionalExtension};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// One candidate `master.db` path repair (Tier 1), keyed by the Sift `actions.id`
 /// that produced it.
@@ -40,6 +41,10 @@ pub struct PendingMasterdbRepair {
     /// action has no track or the track no metadata row; callers fall back to the path.
     pub artist: Option<String>,
     pub title: Option<String>,
+    /// `actions.track_id` — the Sift track the action moved, so the Rekordbox screen can reveal
+    /// the file or find it in Bibliothèque (context menu, 2026-11-03). `None` when the action has
+    /// no track.
+    pub sift_track_id: Option<i64>,
 }
 
 /// One ambiguous-repair candidate, enriched with its current `master.db` path for display.
@@ -112,6 +117,28 @@ fn resolve_pioneer_dir(conn: &Connection) -> Result<std::path::PathBuf, String> 
 /// together land under the same backup batch directory.
 fn new_batch_stamp() -> String {
     chrono::Local::now().format("%Y%m%d-%H%M%S").to_string()
+}
+
+/// La boucle commune des trois écritures par lot (chemins, métadonnées, pochettes). `stop` est
+/// lu ENTRE deux entrées, jamais au milieu d'une écriture : chaque entrée a son propre backup et
+/// sa propre écriture vérifiée, donc s'arrêter ne défait rien et ne laisse rien à moitié écrit.
+/// Les entrées non atteintes n'ont pas d'issue dans le résultat et restent en attente.
+/// `progress` reçoit le nombre d'entrées traitées après chacune (feuille de l'écran Rekordbox).
+fn apply_each<T>(
+    ids: &[i64],
+    stop: &AtomicBool,
+    progress: &mut dyn FnMut(usize),
+    mut one: impl FnMut(i64) -> T,
+) -> Vec<T> {
+    let mut outcomes = Vec::with_capacity(ids.len());
+    for &id in ids {
+        if stop.load(Ordering::SeqCst) {
+            break;
+        }
+        outcomes.push(one(id));
+        progress(outcomes.len());
+    }
+    outcomes
 }
 
 /// Logs + builds the "master.db already written, local bookkeeping failed" message shared by
@@ -244,7 +271,7 @@ pub(crate) fn pending_repairs_inner(
 ) -> Result<Vec<PendingMasterdbRepair>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT r.id, r.track_id, r.candidate_track_ids, r.from_path, r.to_path, r.status, r.detected_at, a.session_id, m.artist, m.title
+            "SELECT r.id, r.track_id, r.candidate_track_ids, r.from_path, r.to_path, r.status, r.detected_at, a.session_id, m.artist, m.title, a.track_id
              FROM rekordbox_masterdb_repairs r
              LEFT JOIN actions a ON a.id = r.action_id
              LEFT JOIN metadata m ON m.track_id = a.track_id
@@ -266,6 +293,7 @@ pub(crate) fn pending_repairs_inner(
                 session_id: r.get(7)?,
                 artist: r.get(8)?,
                 title: r.get(9)?,
+                sift_track_id: r.get(10)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -430,21 +458,15 @@ pub(crate) fn apply_repairs_inner(
     conn: &Connection,
     backup_root: &Path,
     ids: &[i64],
+    stop: &AtomicBool,
+    progress: &mut dyn FnMut(usize),
 ) -> Result<Vec<ApplyRepairOutcome>, String> {
     let pioneer_dir = resolve_pioneer_dir(conn)?;
     let batch_stamp = new_batch_stamp();
 
-    let mut outcomes = Vec::with_capacity(ids.len());
-    for &id in ids {
-        outcomes.push(apply_one_repair(
-            conn,
-            &pioneer_dir,
-            backup_root,
-            &batch_stamp,
-            id,
-        ));
-    }
-    Ok(outcomes)
+    Ok(apply_each(ids, stop, progress, |id| {
+        apply_one_repair(conn, &pioneer_dir, backup_root, &batch_stamp, id)
+    }))
 }
 
 // ── M8 Tier 3: master.db metadata sync candidates ─────────────────────────────
@@ -806,20 +828,14 @@ pub(crate) fn apply_metadata_syncs_inner(
     conn: &Connection,
     backup_root: &Path,
     ids: &[i64],
+    stop: &AtomicBool,
+    progress: &mut dyn FnMut(usize),
 ) -> Result<Vec<ApplyMetadataSyncOutcome>, String> {
     let pioneer_dir = resolve_pioneer_dir(conn)?;
     let batch_stamp = new_batch_stamp();
-    let mut outcomes = Vec::with_capacity(ids.len());
-    for &id in ids {
-        outcomes.push(apply_one_metadata_sync(
-            conn,
-            &pioneer_dir,
-            backup_root,
-            &batch_stamp,
-            id,
-        ));
-    }
-    Ok(outcomes)
+    Ok(apply_each(ids, stop, progress, |id| {
+        apply_one_metadata_sync(conn, &pioneer_dir, backup_root, &batch_stamp, id)
+    }))
 }
 
 // ── M8 Tier 3 (pochette): master.db artwork sync candidates ───────────────────
@@ -1061,20 +1077,14 @@ pub(crate) fn rekordbox_masterdb_apply_artwork_syncs_inner(
     conn: &Connection,
     backup_root: &Path,
     ids: &[i64],
+    stop: &AtomicBool,
+    progress: &mut dyn FnMut(usize),
 ) -> Result<Vec<ApplyArtworkSyncOutcome>, String> {
     let pioneer_dir = resolve_pioneer_dir(conn)?;
     let batch_stamp = new_batch_stamp();
-    let mut outcomes = Vec::with_capacity(ids.len());
-    for &id in ids {
-        outcomes.push(apply_one_artwork_sync(
-            conn,
-            &pioneer_dir,
-            backup_root,
-            &batch_stamp,
-            id,
-        ));
-    }
-    Ok(outcomes)
+    Ok(apply_each(ids, stop, progress, |id| {
+        apply_one_artwork_sync(conn, &pioneer_dir, backup_root, &batch_stamp, id)
+    }))
 }
 
 // ── M8 Tier 2: playlist duplicate-entry dedup ─────────────────────────────────
@@ -1211,6 +1221,28 @@ pub(crate) fn dedup_playlist_group_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    static NO_STOP: AtomicBool = AtomicBool::new(false);
+
+    /// « Annuler » levé pendant la première entrée : elle va au bout, la suivante ne part pas, et
+    /// la progression a compté ce qui a été traité. Rien n'est écrit pour l'entrée non atteinte.
+    #[test]
+    fn apply_each_s_arrete_entre_deux_entrees() {
+        let stop = AtomicBool::new(false);
+        let mut seen = Vec::new();
+        let mut touched = Vec::new();
+        let out = apply_each(&[10, 20, 30], &stop, &mut |n| seen.push(n), |id| {
+            touched.push(id);
+            stop.store(true, Ordering::SeqCst);
+            id
+        });
+        assert_eq!(out, vec![10]);
+        assert_eq!(touched, vec![10]);
+        assert_eq!(seen, vec![1]);
+
+        let out = apply_each(&[1, 2], &NO_STOP, &mut |_| {}, |id| id * 2);
+        assert_eq!(out, vec![2, 4]);
+    }
 
     /// Les motifs d'échec d'une synchro s'affichent tels quels sur la ligne de l'écran Rekordbox :
     /// ils suivent la langue. Un motif qui dit « introuvable » garde « not found » en anglais.
@@ -1394,7 +1426,8 @@ mod tests {
         );
 
         let backup_root = tmp.path().join("backups");
-        let outcomes = apply_repairs_inner(&conn, &backup_root, &[id]).unwrap();
+        let outcomes =
+            apply_repairs_inner(&conn, &backup_root, &[id], &NO_STOP, &mut |_| {}).unwrap();
         assert_eq!(outcomes.len(), 1);
         assert!(
             outcomes[0].ok,
@@ -1446,7 +1479,8 @@ mod tests {
         );
 
         let backup_root = tmp.path().join("backups");
-        let outcomes = apply_repairs_inner(&conn, &backup_root, &[id1, id2]).unwrap();
+        let outcomes =
+            apply_repairs_inner(&conn, &backup_root, &[id1, id2], &NO_STOP, &mut |_| {}).unwrap();
         assert!(outcomes[0].ok, "row 1: {:?}", outcomes[0].error);
         assert!(outcomes[1].ok, "row 2: {:?}", outcomes[1].error);
 
@@ -1494,8 +1528,14 @@ mod tests {
         );
 
         let backup_root = tmp.path().join("backups");
-        let outcomes =
-            apply_repairs_inner(&conn, &backup_root, &[id_ok, id_missing_track]).unwrap();
+        let outcomes = apply_repairs_inner(
+            &conn,
+            &backup_root,
+            &[id_ok, id_missing_track],
+            &NO_STOP,
+            &mut |_| {},
+        )
+        .unwrap();
         assert!(
             outcomes[0].ok,
             "row 1 should succeed: {:?}",
@@ -1548,7 +1588,8 @@ mod tests {
         );
 
         let backup_root = tmp.path().join("backups");
-        let outcomes = apply_repairs_inner(&conn, &backup_root, &[id]).unwrap();
+        let outcomes =
+            apply_repairs_inner(&conn, &backup_root, &[id], &NO_STOP, &mut |_| {}).unwrap();
         assert!(!outcomes[0].ok);
         assert_eq!(
             outcomes[0].error.as_deref(),
@@ -1589,7 +1630,8 @@ mod tests {
         );
 
         let backup_root = tmp.path().join("backups");
-        let outcomes = apply_repairs_inner(&conn, &backup_root, &[id]).unwrap();
+        let outcomes =
+            apply_repairs_inner(&conn, &backup_root, &[id], &NO_STOP, &mut |_| {}).unwrap();
         assert!(!outcomes[0].ok);
         assert_eq!(
             outcomes[0].error.as_deref(),
@@ -1605,7 +1647,8 @@ mod tests {
         let conn = db();
         let id = seed_repair_row(&conn, "a", "a2", Some("1"), "pending");
         let backup_root = tempfile::tempdir().unwrap().path().join("backups");
-        let err = apply_repairs_inner(&conn, &backup_root, &[id]).unwrap_err();
+        let err =
+            apply_repairs_inner(&conn, &backup_root, &[id], &NO_STOP, &mut |_| {}).unwrap_err();
         assert_eq!(err, NO_LINKED_XML);
     }
 
@@ -2123,7 +2166,8 @@ mod tests {
         let id = seed_metadata_sync_row(&conn, track_id, "pending", Some("40000001"), None);
 
         let backup_root = tmp.path().join("backups");
-        let outcomes = apply_metadata_syncs_inner(&conn, &backup_root, &[id]).unwrap();
+        let outcomes =
+            apply_metadata_syncs_inner(&conn, &backup_root, &[id], &NO_STOP, &mut |_| {}).unwrap();
         assert_eq!(outcomes.len(), 1);
         assert!(
             outcomes[0].ok,
@@ -2180,7 +2224,8 @@ mod tests {
         .unwrap();
 
         let backup_root = tmp.path().join("backups");
-        let outcomes = apply_metadata_syncs_inner(&conn, &backup_root, &[id]).unwrap();
+        let outcomes =
+            apply_metadata_syncs_inner(&conn, &backup_root, &[id], &NO_STOP, &mut |_| {}).unwrap();
         assert!(outcomes[0].ok, "{:?}", outcomes[0].error);
 
         let raw = std::fs::read(pioneer_dir.join("master.db")).unwrap();
@@ -2275,8 +2320,14 @@ mod tests {
         let rows = pending_metadata_syncs_inner(&conn).unwrap();
         assert!(rows[0].cleared.is_empty(), "rien n'est plus à vider");
 
-        let outcomes =
-            apply_metadata_syncs_inner(&conn, &tmp.path().join("backups"), &[id]).unwrap();
+        let outcomes = apply_metadata_syncs_inner(
+            &conn,
+            &tmp.path().join("backups"),
+            &[id],
+            &NO_STOP,
+            &mut |_| {},
+        )
+        .unwrap();
         assert!(outcomes[0].ok, "{:?}", outcomes[0].error);
         assert_eq!(rb_label_and_image(&pioneer_dir, "40000001"), before);
     }
@@ -2312,7 +2363,14 @@ mod tests {
             [meta],
         )
         .unwrap();
-        let out = apply_metadata_syncs_inner(&conn, &tmp.path().join("b-meta"), &[meta]).unwrap();
+        let out = apply_metadata_syncs_inner(
+            &conn,
+            &tmp.path().join("b-meta"),
+            &[meta],
+            &NO_STOP,
+            &mut |_| {},
+        )
+        .unwrap();
         assert!(out[0].ok, "{:?}", out[0].error);
         assert_eq!(
             rb_label_and_image(&pioneer_dir, "40000001").1,
@@ -2330,9 +2388,14 @@ mod tests {
             None,
             cover_path.to_str().unwrap(),
         );
-        let out =
-            rekordbox_masterdb_apply_artwork_syncs_inner(&conn, &tmp.path().join("b-art"), &[art])
-                .unwrap();
+        let out = rekordbox_masterdb_apply_artwork_syncs_inner(
+            &conn,
+            &tmp.path().join("b-art"),
+            &[art],
+            &NO_STOP,
+            &mut |_| {},
+        )
+        .unwrap();
         assert!(out[0].ok, "{:?}", out[0].error);
         assert_eq!(
             rb_label_and_image(&pioneer_dir, "40000001").1,
@@ -2426,7 +2489,14 @@ mod tests {
         let id_fail = seed_metadata_sync_row(&conn, track_id_2, "pending", Some("99999999"), None); // no such djmdContent row
 
         let backup_root = tmp.path().join("backups");
-        let outcomes = apply_metadata_syncs_inner(&conn, &backup_root, &[id_ok, id_fail]).unwrap();
+        let outcomes = apply_metadata_syncs_inner(
+            &conn,
+            &backup_root,
+            &[id_ok, id_fail],
+            &NO_STOP,
+            &mut |_| {},
+        )
+        .unwrap();
         assert_eq!(outcomes.len(), 2);
         assert!(outcomes[0].ok);
         assert!(!outcomes[1].ok);
@@ -2496,7 +2566,8 @@ mod tests {
         );
 
         let backup_root = tmp.path().join("backups");
-        let outcomes = apply_metadata_syncs_inner(&conn, &backup_root, &[id]).unwrap();
+        let outcomes =
+            apply_metadata_syncs_inner(&conn, &backup_root, &[id], &NO_STOP, &mut |_| {}).unwrap();
         assert_eq!(outcomes.len(), 1);
         assert!(!outcomes[0].ok);
         assert!(outcomes[0].error.as_deref().unwrap().contains("ambigu"));
@@ -2505,7 +2576,7 @@ mod tests {
         // du site d'appel, pas d'une copie écrite dans le test. La ligne reste ambiguë après un rejet
         // (vérifié juste en dessous), donc le second passage rejoue exactement le même cas.
         let en = crate::i18n::with_lang(crate::i18n::Lang::En, || {
-            apply_metadata_syncs_inner(&conn, &backup_root, &[id]).unwrap()
+            apply_metadata_syncs_inner(&conn, &backup_root, &[id], &NO_STOP, &mut |_| {}).unwrap()
         });
         assert_eq!(
             en[0].error.as_deref(),
@@ -2684,8 +2755,14 @@ mod tests {
         );
 
         let backup_root = tmp.path().join("backups");
-        let outcomes =
-            rekordbox_masterdb_apply_artwork_syncs_inner(&conn, &backup_root, &[id]).unwrap();
+        let outcomes = rekordbox_masterdb_apply_artwork_syncs_inner(
+            &conn,
+            &backup_root,
+            &[id],
+            &NO_STOP,
+            &mut |_| {},
+        )
+        .unwrap();
         assert_eq!(outcomes.len(), 1);
         assert!(
             outcomes[0].ok,
@@ -2748,8 +2825,14 @@ mod tests {
         );
 
         let backup_root = tmp.path().join("backups");
-        let outcomes =
-            rekordbox_masterdb_apply_artwork_syncs_inner(&conn, &backup_root, &[id]).unwrap();
+        let outcomes = rekordbox_masterdb_apply_artwork_syncs_inner(
+            &conn,
+            &backup_root,
+            &[id],
+            &NO_STOP,
+            &mut |_| {},
+        )
+        .unwrap();
         assert_eq!(outcomes.len(), 1);
         assert!(!outcomes[0].ok);
         assert!(outcomes[0]
@@ -2811,8 +2894,14 @@ mod tests {
         );
 
         let backup_root = tmp.path().join("backups");
-        let outcomes =
-            rekordbox_masterdb_apply_artwork_syncs_inner(&conn, &backup_root, &[id]).unwrap();
+        let outcomes = rekordbox_masterdb_apply_artwork_syncs_inner(
+            &conn,
+            &backup_root,
+            &[id],
+            &NO_STOP,
+            &mut |_| {},
+        )
+        .unwrap();
         assert_eq!(outcomes.len(), 1);
         assert!(!outcomes[0].ok);
         assert!(outcomes[0].error.as_deref().unwrap().contains("ambigu"));
@@ -3042,6 +3131,7 @@ mod tests {
             session_id: None,
             artist: None,
             title: None,
+            sift_track_id: None,
         };
         let PendingMasterdbRepair {
             id,
@@ -3055,6 +3145,7 @@ mod tests {
             session_id,
             artist,
             title,
+            sift_track_id,
         } = v;
         let _ = (
             id,
@@ -3068,6 +3159,7 @@ mod tests {
             session_id,
             artist,
             title,
+            sift_track_id,
         );
     }
 

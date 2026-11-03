@@ -6,8 +6,9 @@ use crate::filing;
 use crate::library::{self, LibraryFacets, LibraryFilter, LibraryTrack};
 use crate::metadata::{self, MetadataEdit};
 use rusqlite::Connection;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Filed tracks joined to metadata + genres, filtered (folder / quality / genre / q).
 #[tauri::command]
@@ -526,18 +527,79 @@ pub fn rekordbox_masterdb_resolve_ambiguous(
 /// subdirectory per row so a later row's backup in the same batch never overwrites an earlier
 /// row's.
 #[tauri::command]
-pub fn rekordbox_masterdb_apply_repairs(
+pub async fn rekordbox_masterdb_apply_repairs(
     app: AppHandle,
-    conn: State<'_, Mutex<Connection>>,
     ids: Vec<i64>,
 ) -> Result<Vec<ApplyRepairOutcome>, String> {
+    hors_du_fil(move || {
+        sync_bloquant(&app, |conn, root, stop, progress| {
+            crate::rekordbox_repairs::apply_repairs_inner(conn, root, &ids, stop, progress)
+        })
+    })
+    .await
+}
+
+// ── Synchronisation master.db : hors du fil de la fenêtre, progression, arrêt ───────────────
+
+/// « Annuler » sur la feuille de synchronisation de l'écran Rekordbox, lu par
+/// `rekordbox_repairs::apply_each` ENTRE deux entrées, jamais au milieu d'une écriture : chaque
+/// entrée a son propre backup et sa propre écriture vérifiée, rien n'est défait. Le frontend le
+/// baisse avant le premier appel d'une synchronisation et le lève sur « Annuler » : une remise à
+/// zéro au début de chaque commande effacerait un arrêt demandé entre deux appels.
+static RKB_SYNC_STOP: AtomicBool = AtomicBool::new(false);
+
+/// L'événement `rekordbox:sync-progress`, émis après chaque entrée traitée d'une commande
+/// d'écriture par lot. `done` compte dans l'appel en cours ; le frontend y ajoute les appels
+/// précédents de la même synchronisation. Miroir : `RkbSyncProgress` de `shared/contracts.ts`.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub struct RkbSyncProgress {
+    pub done: usize,
+}
+
+/// Lève (`true`, « Annuler ») ou baisse (`false`, début de synchronisation) le drapeau d'arrêt.
+#[tauri::command]
+pub fn rekordbox_masterdb_set_sync_stop(stop: bool) {
+    RKB_SYNC_STOP.store(stop, Ordering::SeqCst);
+}
+
+/// Le corps commun, SYNCHRONE, des quatre écritures `master.db` : le dossier des backups, le
+/// verrou de la base, et l'écriture branchée sur le drapeau d'arrêt et l'événement de progression.
+fn sync_bloquant<T>(
+    app: &AppHandle,
+    apply: impl FnOnce(
+        &Connection,
+        &std::path::Path,
+        &AtomicBool,
+        &mut dyn FnMut(usize),
+    ) -> Result<T, String>,
+) -> Result<T, String> {
     let backup_root = app
         .path()
         .app_data_dir()
         .map_err(|e| e.to_string())?
         .join("rekordbox-backups");
-    let conn = db::lock_conn(&conn)?;
-    crate::rekordbox_repairs::apply_repairs_inner(&conn, &backup_root, &ids)
+    let state = app.state::<Mutex<Connection>>();
+    let conn = db::lock_conn(&state)?;
+    apply(&conn, &backup_root, &RKB_SYNC_STOP, &mut |done| {
+        app.emit("rekordbox:sync-progress", RkbSyncProgress { done })
+            .ok();
+    })
+}
+
+/// Lance une écriture `master.db` sur `spawn_blocking` (2026-11-03, spec Rekordbox § États,
+/// validé par Antoine). Synchrones, les quatre commandes s'exécutaient sur le fil de la fenêtre :
+/// une synchronisation de N entrées, chacune avec backup, écriture et relecture, gelait la
+/// fenêtre entière, donc la barre de progression et le bouton « Annuler » avec. Gardé par
+/// `ecritures_masterdb_restent_hors_du_fil_de_la_fenetre`.
+async fn hors_du_fil<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| {
+        crate::tr!(
+            "Rekordbox : le fil de synchronisation n'a pas rendu : {e}",
+            "Rekordbox: the sync thread didn't return: {e}"
+        )
+    })?
 }
 
 // ── M8 Tier 3: master.db metadata sync candidates ─────────────────────────────
@@ -584,18 +646,16 @@ pub fn rekordbox_masterdb_resolve_ambiguous_metadata_sync(
 /// A failure on one `id` does not stop the rest of the batch. Backups land under
 /// `app_data_dir()/rekordbox-backups/<batch timestamp>/<id>/`, same convention as Tier 1/2.
 #[tauri::command]
-pub fn rekordbox_masterdb_apply_metadata_syncs(
+pub async fn rekordbox_masterdb_apply_metadata_syncs(
     app: AppHandle,
-    conn: State<'_, Mutex<Connection>>,
     ids: Vec<i64>,
 ) -> Result<Vec<ApplyMetadataSyncOutcome>, String> {
-    let backup_root = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("rekordbox-backups");
-    let conn = db::lock_conn(&conn)?;
-    crate::rekordbox_repairs::apply_metadata_syncs_inner(&conn, &backup_root, &ids)
+    hors_du_fil(move || {
+        sync_bloquant(&app, |conn, root, stop, progress| {
+            crate::rekordbox_repairs::apply_metadata_syncs_inner(conn, root, &ids, stop, progress)
+        })
+    })
+    .await
 }
 
 // ── M8 Tier 3 (pochette): master.db artwork sync candidates ───────────────────
@@ -641,22 +701,18 @@ pub fn rekordbox_masterdb_resolve_ambiguous_artwork_sync(
 /// artwork files, one at a time. Never invoked automatically. Backups land under
 /// `app_data_dir()/rekordbox-backups/<batch timestamp>/<id>/`, same convention as the other tiers.
 #[tauri::command]
-pub fn rekordbox_masterdb_apply_artwork_syncs(
+pub async fn rekordbox_masterdb_apply_artwork_syncs(
     app: AppHandle,
-    conn: State<'_, Mutex<Connection>>,
     ids: Vec<i64>,
 ) -> Result<Vec<crate::rekordbox_repairs::ApplyArtworkSyncOutcome>, String> {
-    let backup_root = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("rekordbox-backups");
-    let conn = db::lock_conn(&conn)?;
-    crate::rekordbox_repairs::rekordbox_masterdb_apply_artwork_syncs_inner(
-        &conn,
-        &backup_root,
-        &ids,
-    )
+    hors_du_fil(move || {
+        sync_bloquant(&app, |conn, root, stop, progress| {
+            crate::rekordbox_repairs::rekordbox_masterdb_apply_artwork_syncs_inner(
+                conn, root, &ids, stop, progress,
+            )
+        })
+    })
+    .await
 }
 
 // ── M8 Tier 2: playlist duplicate-entry dedup ─────────────────────────────────
@@ -687,23 +743,62 @@ pub fn rekordbox_masterdb_scan_playlist_duplicates(
 /// returns a humanized error rather than silently doing nothing or the
 /// wrong thing.
 #[tauri::command]
-pub fn rekordbox_masterdb_dedup_playlist_group(
+pub async fn rekordbox_masterdb_dedup_playlist_group(
     app: AppHandle,
-    conn: State<'_, Mutex<Connection>>,
     group: PlaylistDuplicateGroupDto,
 ) -> Result<(), String> {
-    let backup_root = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("rekordbox-backups");
-    let conn = db::lock_conn(&conn)?;
-    crate::rekordbox_repairs::dedup_playlist_group_inner(&conn, &backup_root, group)
+    hors_du_fil(move || {
+        sync_bloquant(&app, |conn, root, _, _| {
+            crate::rekordbox_repairs::dedup_playlist_group_inner(conn, root, group)
+        })
+    })
+    .await
 }
 
 #[cfg(test)]
 mod rekordbox_tests {
     use super::*;
+
+    /// Même garde que `ipc_doublons::tests::apply_duplicate_plan_reste_hors_du_fil_de_la_fenetre` :
+    /// un test de SOURCE. Chacune des quatre écritures `master.db` passe par `hors_du_fil`, et
+    /// `hors_du_fil` délègue à `spawn_blocking` — sinon la feuille de synchronisation gèle.
+    #[test]
+    fn ecritures_masterdb_restent_hors_du_fil_de_la_fenetre() {
+        let source = include_str!("ipc_library.rs");
+        for nom in [
+            "rekordbox_masterdb_apply_repairs",
+            "rekordbox_masterdb_apply_metadata_syncs",
+            "rekordbox_masterdb_apply_artwork_syncs",
+            "rekordbox_masterdb_dedup_playlist_group",
+        ] {
+            let debut = source
+                .find(&format!("pub async fn {nom}("))
+                .unwrap_or_else(|| panic!("`{nom}` doit rester `async`"));
+            let corps = &source[debut..];
+            let fin = corps.find("\n}\n").expect("fin de la commande");
+            assert!(
+                corps[..fin].contains("hors_du_fil(move ||"),
+                "`{nom}` ne passe plus par `hors_du_fil` : la synchronisation gèlerait la fenêtre"
+            );
+        }
+        let debut = source
+            .find("async fn hors_du_fil<")
+            .expect("`hors_du_fil` doit exister");
+        let corps = &source[debut..];
+        let fin = corps.find("\n}\n").expect("fin de `hors_du_fil`");
+        assert!(corps[..fin].contains("tauri::async_runtime::spawn_blocking("));
+    }
+
+    /// Le payload de `rekordbox:sync-progress` contre son miroir `RkbSyncProgress` de
+    /// `shared/contracts.ts` — destructuré sans `..` : un champ ajouté casse ce test.
+    #[test]
+    fn rkb_sync_progress_shape_matches_contracts_ts() {
+        let RkbSyncProgress { done } = RkbSyncProgress { done: 3 };
+        assert_eq!(
+            serde_json::to_value(RkbSyncProgress { done }).unwrap(),
+            serde_json::json!({ "done": 3 })
+        );
+    }
 
     fn db() -> Connection {
         let c = Connection::open_in_memory().unwrap();
