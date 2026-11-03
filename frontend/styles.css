@@ -1487,6 +1487,10 @@ body[data-view="revue"] .sift-pz-row.sift-pz-analyze{display:none}
    vaut UN CRAN au-dessus, soit --text-base. Substitution exacte, pas un arrondi : le littéral
    valait 13px et --text-base est déclaré 13px (styles.css:234), donc le rendu ne bouge pas. */
 .qi i{font-size:var(--text-base);flex:none}
+/* Échec de conversion, sur la seconde ligne depuis #86 (`queue-row-sub.ts`) : au bord droit de la
+   rangée il comprimait le nom du fichier jusqu'à une lettre. Même règle d'icône qu'au-dessus, un
+   cran au-dessus du texte voisin : ici `.qi-sub` en --text-xs, donc --text-sm. */
+.qi-sub .qi-fail{color:var(--color-text-warning)}.qi-sub .qi-fail i{font-size:var(--text-sm)}
 /* Case de lot — dans la colonne de file, mode Lot uniquement */
 .qi-ck{flex:none;width:16px;height:16px;margin-right:var(--space-6);cursor:pointer;accent-color:var(--color-accent-fill);border-radius:var(--border-radius-xs)}
 .pbar{height:4px;background:var(--color-border-tertiary);border-radius:var(--border-radius-pill);margin:var(--space-4) 0 var(--space-8);overflow:hidden}.pfill{height:100%;background:var(--color-text-info);border-radius:var(--border-radius-pill)}
