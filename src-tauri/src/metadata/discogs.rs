@@ -306,13 +306,18 @@ fn parse_tracklist(v: &Value) -> Vec<TracklistEntry> {
 /// Écart en deçà duquel deux durées désignent le même enregistrement : un rip de vinyle ou un
 /// encodage décale de quelques secondes (silence de tête, fin de sillon), pas davantage.
 const DURATION_SAME_S: f64 = 3.0;
-/// Écart au-delà duquel ce n'est plus le même mix : un radio edit, une version longue.
-const DURATION_OTHER_S: f64 = 15.0;
-/// Poids de la durée au score de tracklist, en plus et en moins. Valeurs du design T5 (§ 7).
+/// Bonus de la durée au score de tracklist. Valeur du design T5 (§ 7).
 const DURATION_WEIGHT: i32 = 3;
 
 /// Contribution de la durée au score d'une entrée de tracklist. Nulle dès qu'une des deux durées
 /// manque : l'absence ne départage rien, elle ne doit ni aider ni nuire.
+///
+/// **Un bonus, jamais une pénalité.** Le design prévoyait aussi −3 au-delà de 15 s d'écart.
+/// Mesuré le 2026-11-03 sur 75 pistes identifiées dont Discogs donne la durée : 64 % à ≤ 3 s, mais
+/// 18,7 % de BONNES pistes à plus de 15 s (fichier tronqué, autre edit, durée Discogs fausse).
+/// Sur un titre nu court, −3 passait le score sous zéro et effaçait le match juste — six sur 75.
+/// Aucun autre mix de la même release ne tombait à ≤ 3 s du fichier (0 sur 31) : le bonus seul
+/// garde la séparation sans rien coûter par rapport à avant T5.
 fn duration_score(track_s: Option<f64>, target_s: Option<f64>) -> i32 {
     let (Some(a), Some(b)) = (track_s, target_s) else {
         return 0;
@@ -323,8 +328,6 @@ fn duration_score(track_s: Option<f64>, target_s: Option<f64>) -> i32 {
     let gap = (a - b).abs();
     if gap <= DURATION_SAME_S {
         DURATION_WEIGHT
-    } else if gap > DURATION_OTHER_S {
-        -DURATION_WEIGHT
     } else {
         0
     }
@@ -1224,7 +1227,19 @@ mod tests {
         assert_eq!(title, None);
     }
 
-    /// Les trois paliers du design § 7, bornes comprises, et la neutralité d'une durée absente.
+    /// Cas réel mesuré le 2026-11-03 sur la base d'Antoine : « Commute », identifiée, fichier de
+    /// 363 s quand Discogs donne 3:38. Une durée qui ne colle pas ne doit pas effacer la SEULE
+    /// piste dont les mots correspondent : avec la pénalité −3 du design, 1 − 3 = −2, et le match
+    /// juste disparaissait. 14 bonnes pistes sur 75 mesurées sont à plus de 15 s de Discogs.
+    #[test]
+    fn a_far_duration_never_erases_the_only_word_match() {
+        let tracks = tl_timed(&[("Commute", "3:38"), ("Departure", "6:02")]);
+        let (score, title) = best_track_match(&tracks, "Commute", None, Some(363.0));
+        assert!(score > 0, "score {score}");
+        assert_eq!(title.as_deref(), Some("Commute"));
+    }
+
+    /// Les deux paliers, bornes comprises, et la neutralité d'une durée absente.
     #[test]
     fn duration_score_bands() {
         assert_eq!(
@@ -1238,14 +1253,9 @@ mod tests {
             "au-delà de 3 s"
         );
         assert_eq!(
-            duration_score(Some(372.0), Some(387.0)),
+            duration_score(Some(372.0), Some(735.0)),
             0,
-            "15 s : zone neutre"
-        );
-        assert_eq!(
-            duration_score(Some(372.0), Some(387.1)),
-            -3,
-            "au-delà de 15 s"
+            "écart lointain : neutre, pas pénalisé"
         );
         assert_eq!(duration_score(None, Some(372.0)), 0);
         assert_eq!(duration_score(Some(372.0), None), 0);
