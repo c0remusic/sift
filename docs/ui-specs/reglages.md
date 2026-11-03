@@ -23,11 +23,14 @@ Sélection exclusive, fond plein arrondi sur l'active. Cinq entrées :
 
 | Catégorie | Contenu |
 |---|---|
-| **Général** | Racine de bibliothèque, dossiers surveillés, comportement au démarrage |
-| **Conversion** | Formats cible, règle anti-surqualité, normalisation |
+| **Général** | Racine de bibliothèque, dossiers surveillés, ~~comportement au démarrage~~ |
+| **Conversion** | Formats cible, ~~règle anti-surqualité~~, ~~normalisation~~ |
 | **Nommage** | Modèle de nom de fichier, aperçu en direct |
-| **Identification** | Jeton Discogs, ordre des sources d'identification, familles de genre |
+| **Identification** | Jeton Discogs, ~~ordre des sources d'identification~~, ~~familles de genre~~ |
 | **Apparence** | Thème clair / sombre / auto, densité si elle devient réglable |
+
+Les contenus barrés sont écartés le 2026-11-03 (§ Décision du même jour) : aucun n'avait été
+construit, et aucun ne deviendra un réglage.
 
 ### Zone C — panneau
 
@@ -116,6 +119,35 @@ Apparence), avec les valeurs tranchées le même jour :
   réglage changé pendant un lot ne mélange pas deux profils. Les pistes déjà rangées ne sont pas
   reconverties.
 - 96 kHz reste injouable sur les CDJ d'avant 2016 : la phrase de la rangée le dit.
+
+## Décision — 2026-11-03 : cinq contenus de la § Zone B′ écartés
+
+Un audit du 2026-11-03 a relevé que le tableau de la § Zone B′ (décision du 2026-09-02) prévoyait
+cinq contenus que la décision du 2026-09-09 n'avait ni livrés ni écartés. Vérifiés un par un dans le
+code, puis tranchés par Antoine : **les cinq sont écartés**. Aucun ne devient un réglage.
+
+- **Comportement au démarrage (Général).** Rien n'est réglable et rien ne le sera. Chaque
+  lancement rejoue le re-verdict, démarre les watchers puis le scan de rattrapage des sources
+  (`src-tauri/src/lib.rs`, `ipc::spawn_startup_scan`), purge le cache de lecture et, en release,
+  cherche une mise à jour (`frontend/main.ts`, `installUpdateBanner`). Le scan de rattrapage est
+  ce qui empêche une piste arrivée app fermée d'être ratée : le rendre facultatif ouvrirait ce trou.
+- **Règle anti-surqualité (Conversion).** Elle existe, comme **garde fixe, non désactivable** :
+  `encode::guard_no_upscale` refuse lossy → lossless, et `filing.rs` refuse en amont une source
+  lossless par l'extension mais lossy par le contenu (un MP3 renommé `.flac`). Le plafond « jamais
+  au-dessus de la source » a déjà été écarté par la § Décision du 2026-09-28 (« Exact, pas
+  plafond »). Il n'y a donc rien à régler.
+- **Normalisation (Conversion).** Rien n'existe : l'encodage ne touche jamais au niveau. Le mot
+  n'avait pas de définition dans Sift, et aucune n'est retenue — Rekordbox et les CDJ font leur
+  propre auto-gain, et changer le niveau d'un fichier de DJ est destructif.
+- **Ordre des sources d'identification (Identification).** Discogs est la seule source
+  (`src-tauri/src/metadata/mod.rs`). L'ordre interne de la requête — saisie à l'écran, puis tags
+  propres, puis nom de fichier (`ipc_identify::build_query`) — est délibéré (#66, #67) et reste
+  codé. La question ne se rouvre qu'avec un second fournisseur.
+- **Familles de genre (Identification).** La feature a été retirée : les chips colorées par
+  famille (`239fa3a`) ont disparu au fork F du 2026-08-24, et leur module a été supprimé le
+  2026-09-15 (`1eced98`). Les genres s'affichent en texte, tels que Discogs les rend.
+
+La catégorie Identification ne porte donc que le jeton Discogs, et Général que la racine.
 
 ## États
 
