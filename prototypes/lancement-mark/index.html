@@ -1,0 +1,240 @@
+<title>Lancement du mark</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Prototype jetable, ticket #90 (carte « Sift paraît instantané »). Trois variantes côte à côte,
+   mêmes réglages. Couleurs et durées recopiées de frontend/styles.css (oklch exacts). */
+:root{
+  --bg:oklch(97% .004 286);--fg:oklch(24% .006 286);--muted:oklch(50% .006 286);
+  --line:oklch(88% .006 286);--chip:oklch(100% 0 0);--chip-on:oklch(24% .006 286);--chip-on-fg:oklch(98% 0 0);
+  --font:system-ui,-apple-system,"Segoe UI",sans-serif;--mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --ease-out:cubic-bezier(.2,0,0,1);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:oklch(19% .004 286);--fg:oklch(93% .004 286);--muted:oklch(68% .006 286);
+  --line:oklch(32% .006 286);--chip:oklch(25% .004 286);--chip-on:oklch(93% .004 286);--chip-on-fg:oklch(19% .004 286);color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:oklch(19% .004 286);--fg:oklch(93% .004 286);--muted:oklch(68% .006 286);
+  --line:oklch(32% .006 286);--chip:oklch(25% .004 286);--chip-on:oklch(93% .004 286);--chip-on-fg:oklch(19% .004 286);color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px}
+main{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1{font-size:20px;margin:0;text-wrap:balance}
+p.lede{margin:0;color:var(--muted);max-width:70ch;line-height:1.5}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px 20px;align-items:start}
+.ctl{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ctl>span{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.seg{display:flex;flex-wrap:wrap;gap:4px}
+.seg button,.btn{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--chip);color:var(--fg);border-radius:6px;padding:5px 10px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--chip-on);color:var(--chip-on-fg);border-color:var(--chip-on)}
+.btn.primary{background:var(--chip-on);color:var(--chip-on-fg);border-color:var(--chip-on);padding:7px 16px}
+button:focus-visible,input:focus-visible{outline:2px solid oklch(60% .15 280);outline-offset:2px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px}
+input[type=range]{width:100%}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}
+figure{margin:0;display:flex;flex-direction:column;gap:8px;min-width:0}
+figcaption b{font-size:14px}
+figcaption small{display:block;color:var(--muted);font-size:12px;line-height:1.45;margin-top:2px}
+.log{font-family:var(--mono);font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;min-height:3em;white-space:pre-wrap}
+
+/* --- Fenêtre Sift simulée. Valeurs : styles.css, :root (clair) et bloc sombre. --- */
+.win{position:relative;aspect-ratio:16/10;max-width:100%;border-radius:10px;overflow:hidden;
+  box-shadow:0 0 0 1px var(--line),0 8px 24px oklch(0% 0 0 / .18)}
+.win.s-light{--w-bg:oklch(92.33% .0067 286.3);--w-rail:oklch(86.22% .0068 286.3);--w-raised:oklch(100% 0 286.3);
+  --w-text:oklch(30% .006 286);--mk-back:oklch(76.52% .1752 62.57);--mk-front:oklch(73.03% .1944 147.44)}
+.win.s-dark{--w-bg:oklch(29.39% .0036 286.2);--w-rail:oklch(22.73% .0038 286.1);--w-raised:oklch(40.24% .0033 286.3);
+  --w-text:oklch(90% .004 286);--mk-back:oklch(84.04% .1108 78.51);--mk-front:oklch(84.99% .0947 151.66)}
+.splash,.app{position:absolute;inset:0;background:var(--w-bg)}
+.splash{display:grid;place-items:center}
+.tile{display:grid;place-items:center;width:30%;aspect-ratio:1;border-radius:22.5%;background:#1e1e22;
+  --mk-back:oklch(84.04% .1108 78.51);--mk-front:oklch(84.99% .0947 151.66)}
+.tile svg{width:60%}
+.bare{width:100%;display:flex;flex-direction:column;align-items:center;gap:10px}
+.bare svg{width:18%}
+.name{font-family:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;font-size:calc(var(--name-k,40) * .18cqi);line-height:1;font-weight:600;color:var(--w-text);letter-spacing:.01em}
+.win{container-type:inline-size}
+.tile .name{display:none}
+.splash svg{display:block;overflow:visible}
+.mk-a,.mk-g{transform-box:fill-box;transform-origin:center}
+.mk-a rect{fill:none;stroke:var(--mk-back)}
+.mk-g rect{fill:var(--mk-front)}
+.app{opacity:0;display:grid;grid-template-rows:28px 1fr;grid-template-columns:24% 1fr;transition:opacity 150ms var(--ease-out)}
+.app.on{opacity:1}
+.app .tb{grid-column:1/-1;display:flex;align-items:center;gap:6px;padding:0 10px;font-size:12px;color:var(--w-text);background:var(--w-rail)}
+.app .tb svg{width:14px}
+.app .rail{background:var(--w-rail);padding:10px;display:flex;flex-direction:column;gap:8px}
+.app .rail i,.app .body i{display:block;height:8px;border-radius:4px;background:var(--w-raised)}
+.app .body{padding:14px;display:flex;flex-direction:column;gap:10px}
+</style>
+
+<main>
+  <header style="display:flex;flex-direction:column;gap:6px">
+    <h1>Lancement du mark : trois variantes</h1>
+    <p class="lede">Prototype jetable du ticket « Le lancement animé du mark : forme et mouvement ». Chaque fenêtre simule le démarrage décidé (A+C) : la page de lancement peint le mark, l'app arrive par un fondu de 150 ms quand elle est prête. Règle le moment où l'app est prête pour voir les deux cas : prête avant la fin de l'animation, ou en retard.</p>
+  </header>
+
+  <section class="controls" aria-label="Réglages">
+    <div class="ctl"><span>Fond</span><div class="seg" data-k="bg">
+      <button data-v="bare" aria-pressed="true">Surface de la fenêtre</button><button data-v="tile">Tuile de l'icône</button></div></div>
+    <div class="ctl"><span>Thème de Sift</span><div class="seg" data-k="theme">
+      <button data-v="dark" aria-pressed="true">Sombre</button><button data-v="light">Clair</button></div></div>
+    <div class="ctl"><span>Si l'app tarde</span><div class="seg" data-k="wait">
+      <button data-v="loop" aria-pressed="true">Boucle</button><button data-v="hold">Tenir la pose</button><button data-v="pulse">Pulsation lente</button></div></div>
+    <div class="ctl"><span>Quand l'app est prête</span><div class="seg" data-k="ready">
+      <button data-v="finish" aria-pressed="true">Finir le geste, puis fondu</button><button data-v="cut">Fondu tout de suite</button></div></div>
+    <div class="ctl"><span>App prête à <b id="readyOut">1200</b> ms</span>
+      <input id="readyMs" type="range" min="100" max="3000" step="50" value="1200" aria-label="Moment où l'app est prête, en millisecondes"></div>
+    <div class="ctl"><span>Taille du nom : <b id="nameOut">40</b> % de la largeur du mark</span>
+      <input id="nameK" type="range" min="15" max="70" step="1" value="40" aria-label="Taille du nom, en pourcentage de la largeur du mark"></div>
+    <div class="ctl"><span>Lecture</span><div class="row">
+      <label><input id="reduce" type="checkbox"> Réduire les animations</label>
+      <label><input id="slow" type="checkbox" checked> Ralenti ×4 (préféré par Antoine)</label>
+      <button class="btn primary" id="play">Rejouer</button></div></div>
+  </section>
+
+  <section class="grid" id="grid"></section>
+</main>
+
+<script>
+const EASE = "cubic-bezier(.2,0,0,1)"; // --ease-out
+const LAND = "translate(174.5px,174.5px) rotate(16deg)"; // l'ambre posé pile sur le vert
+// Échelle de mouvement du dépôt : 75 / 150 / 300 ms.
+// Le vert seul a son centre en (598.5, 598.5), le mark entier vers (500, 500) : décaler tout le
+// dessin de -98.5 pendant le rangement garde le carré final au centre de la fenêtre.
+const CENTER = "translate(-98.5px,-98.5px)";
+const VARIANTS = [
+  { id: "c2", name: "C′ · Centré, nom dessous", name2: true,
+    note: "Retour d'Antoine sur C : le dessin glisse pendant le rangement pour que le vert finisse au centre ; « Sift » apparaît dessous (150 ms, après 150 ms). En attente, le geste boucle.",
+    steps: [
+      { el: "g", dur: 150, delay: 0, kf: [{ transform: "scale(.92)", opacity: 0 }, { transform: "none", opacity: 1 }] },
+      { el: "a", dur: 600, delay: 0, kf: [
+        { transform: "translate(-60px,-60px) rotate(-30deg)", opacity: 0, offset: 0 },
+        { transform: "none", opacity: 1, offset: .5 },
+        { transform: LAND, opacity: 1, offset: 1 }] },
+      { el: "all", dur: 600, delay: 0, kf: [
+        { transform: "none", offset: 0 }, { transform: "none", offset: .5 }, { transform: CENTER, offset: 1 }] },
+      { el: "n", dur: 150, delay: 150, kf: [{ opacity: 0 }, { opacity: 1 }] },
+    ],
+    // Boucle d'attente (retour d'Antoine : le logo ne disparaît jamais). Le vert reste au centre,
+    // le nom reste affiché ; seul l'ambre ressort à sa pose de l'icône, puis se range à nouveau.
+    loop: [
+      { el: "all", dur: 300, delay: 0, kf: [{ transform: CENTER }, { transform: CENTER }] },
+      { el: "g", dur: 300, delay: 0, kf: [{ opacity: 1 }, { opacity: 1 }] },
+      { el: "n", dur: 300, delay: 0, kf: [{ opacity: 1 }, { opacity: 1 }] },
+      { el: "a", dur: 300, delay: 0, kf: [{ transform: "none" }, { transform: LAND }] },
+    ] },
+  { id: "both", name: "C · Arrive puis se range (avant)", loop: undefined,
+    note: "Le vert apparaît (150 ms), l'ambre tombe à sa place (300 ms) puis se range dessous (300 ms). 600 ms. Fin : le vert seul.",
+    steps: [
+      { el: "g", dur: 150, delay: 0, kf: [{ transform: "scale(.92)", opacity: 0 }, { transform: "none", opacity: 1 }] },
+      { el: "a", dur: 600, delay: 0, kf: [
+        { transform: "translate(-60px,-60px) rotate(-30deg)", opacity: 0, offset: 0 },
+        { transform: "none", opacity: 1, offset: .5 },
+        { transform: LAND, opacity: 1, offset: 1 }] },
+    ] },
+];
+
+const S = { bg: "bare", theme: "dark", wait: "loop", ready: "finish" };
+VARIANTS.splice(2); // A et B écartés par Antoine ; ne restent que C′ et C pour comparaison
+const reduceMQ = matchMedia("(prefers-reduced-motion: reduce)");
+document.getElementById("reduce").checked = reduceMQ.matches;
+
+const MARK = `<svg viewBox="190 190 620 620" aria-hidden="true"><g class="mk-all">
+  <g class="mk-a"><rect x="245.5" y="245.5" width="357" height="357" rx="84" stroke-width="52" transform="rotate(-16 424 424)"/></g>
+  <g class="mk-g"><rect x="394" y="394" width="409" height="409" rx="110"/></g></g></svg>`;
+const SMALL = MARK.replace('class="mk-a"', 'class="mk-a x"').replace('class="mk-g"', 'class="mk-g x"');
+
+const grid = document.getElementById("grid");
+const cells = VARIANTS.map(v => {
+  const f = document.createElement("figure");
+  f.innerHTML = `<div class="win"><div class="splash"><div class="holder">${MARK}${v.name2 ? '<div class="name">Sift</div>' : ""}</div></div>
+    <div class="app" aria-hidden="true"><div class="tb">${SMALL}Sift</div>
+      <div class="rail"><i style="width:70%"></i><i style="width:55%"></i><i style="width:80%"></i><i style="width:60%"></i></div>
+      <div class="body"><i style="width:40%;height:12px"></i><i></i><i style="width:85%"></i><i style="width:70%"></i></div></div></div>
+    <figcaption><b>${v.name}</b><small>${v.note}</small></figcaption><div class="log"></div>`;
+  grid.appendChild(f);
+  return { v, f, win: f.querySelector(".win"), holder: f.querySelector(".holder"), svg: f.querySelector(".splash svg"),
+    a: f.querySelector(".splash .mk-a"), g: f.querySelector(".splash .mk-g"), all: f.querySelector(".splash .mk-all"),
+    n: f.querySelector(".splash .name"), app: f.querySelector(".app"),
+    log: f.querySelector(".log"), anims: [], token: 0 };
+});
+
+function k() { return document.getElementById("slow").checked ? 4 : 1; }
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function playSteps(c, dir, steps = c.v.steps) {
+  c.anims.forEach(a => a.cancel()); c.anims = [];
+  const total = Math.max(...steps.map(s => s.delay + s.dur));
+  c.anims = steps.map(s => c[s.el].animate(s.kf, {
+    duration: s.dur * k(), easing: EASE, fill: "both",
+    delay: (dir === "reverse" ? total - (s.delay + s.dur) : s.delay) * k(), direction: dir }));
+  return Promise.all(c.anims.map(a => a.finished.catch(() => {})));
+}
+
+function paint(c) {
+  c.win.className = "win s-" + S.theme;
+  c.holder.className = S.bg === "tile" ? "tile" : "bare";
+}
+
+async function run(c) {
+  const my = ++c.token;
+  const alive = () => my === c.token;
+  const slow = k();
+  const readyAt = +document.getElementById("readyMs").value * slow;
+  const reduce = document.getElementById("reduce").checked;
+  paint(c);
+  c.anims.forEach(a => a.cancel()); c.anims = [];
+  c.app.style.transitionDuration = 150 * slow + "ms";
+  c.app.classList.remove("on");
+  const t0 = performance.now();
+  const lines = [];
+  const note = s => { lines.push(`${String(Math.round((performance.now() - t0) / slow)).padStart(5)} ms  ${s}`); c.log.textContent = lines.join("\n"); };
+  let ready = false; const readyP = wait(readyAt).then(() => { ready = true; });
+  let revealed = false;
+  const reveal = why => { if (revealed || !alive()) return; revealed = true; c.anims.forEach(a => a.pause()); c.app.classList.add("on"); note("app visible (fondu 150 ms) · " + why); };
+  note("page de lancement peinte, mark visible");
+
+  if (reduce) {
+    // Mouvement réduit : le mark fixe (pose de l'icône), seul le fondu final reste.
+    await readyP; if (!alive()) return; reveal("mouvement réduit : aucun geste"); return;
+  }
+  if (S.ready === "cut") readyP.then(() => reveal("prête, geste interrompu"));
+
+  await playSteps(c, "normal"); if (!alive() || revealed) return;
+  note("fin du geste");
+  if (ready) { reveal("prête avant la fin du geste"); return; }
+
+  if (S.wait === "hold") { await readyP; if (!alive()) return; reveal("prête pendant la pose tenue"); return; }
+  if (S.wait === "pulse") {
+    const p = c.svg.animate([{ opacity: 1 }, { opacity: .55 }, { opacity: 1 }], { duration: 1200 * slow, iterations: Infinity, easing: "ease-in-out" });
+    c.anims.push(p);
+    await readyP; if (!alive()) return;
+    p.cancel(); reveal("prête pendant la pulsation"); return;
+  }
+  // Boucle : pose tenue 300 ms, retour, nouveau geste ; la fin d'un geste est le seul point de sortie.
+  let n = 1;
+  while (!ready && alive() && !revealed) {
+    await wait(300 * slow); if (!alive() || revealed) return;
+    await playSteps(c, "reverse", c.v.loop); if (!alive() || revealed) return;
+    await playSteps(c, "normal", c.v.loop); if (!alive() || revealed) return;
+    n++; note(`fin du geste n° ${n}`);
+  }
+  reveal("prête, sortie à la fin d'un geste");
+}
+
+function runAll() { cells.forEach(run); }
+
+document.querySelectorAll(".seg").forEach(seg => seg.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  S[seg.dataset.k] = b.dataset.v; runAll();
+}));
+const rm = document.getElementById("readyMs"), ro = document.getElementById("readyOut");
+rm.addEventListener("input", () => { ro.textContent = rm.value; });
+rm.addEventListener("change", runAll);
+// Le mark fait 18 % de la largeur de la fenêtre ; le corps du nom s'exprime en part de cette largeur.
+const nk = document.getElementById("nameK"), no = document.getElementById("nameOut");
+nk.addEventListener("input", () => { no.textContent = nk.value; document.documentElement.style.setProperty("--name-k", nk.value); });
+["reduce", "slow"].forEach(id => document.getElementById(id).addEventListener("change", runAll));
+document.getElementById("play").addEventListener("click", runAll);
+runAll();
+</script>
