@@ -15,7 +15,7 @@
 // Ce que cette lecture RETIRE : la carte `.sift-settings-stack` de 560 px (44 % de la fenêtre vide,
 // DESIGN.md § 11 O-3), le paragraphe d'explication en tête, la ligne « lettre · modèle · taille ·
 // Formater… » et la carte d'occupation empilée SOUS chaque ligne (deux fois l'identité du disque).
-import { listRemovableDrives, driveUsage, ejectDrive } from "./ipc";
+import { listRemovableDrives, driveUsage, ejectDrive, openDrive } from "./ipc";
 import type { RemovableDrive, UsageReport } from "./ipc";
 import { requireEl, esc } from "./dom";
 import { openUsbFormatModal } from "./usb-format-modal";
@@ -278,11 +278,31 @@ async function doEject(d: RemovableDrive): Promise<void> {
   await reload();
 }
 
-/** Clic droit sur une entrée ou sur la zone C (spec § Interactions). « Ouvrir dans l'explorateur »
- * attend une commande IPC qui n'existe pas encore — omis plutôt qu'inventé. */
+/** Clic droit sur une entrée ou sur la zone C (spec § Interactions). « Ouvrir le disque » passe
+ * par `open_drive` (2026-11-03), qui relit lui-même le point de montage. */
 function openDriveMenu(x: number, y: number, d: RemovableDrive, content: HTMLElement): void {
   const t = T();
+  const say = (msg: string) => {
+    const status = content.querySelector<HTMLElement>(".sift-usage-status");
+    if (status) {
+      status.textContent = msg;
+      status.hidden = false;
+    }
+  };
   openContextMenu(x, y, [
+    {
+      label: t.ouvrir,
+      onPick: d.mount
+        ? () => {
+            void openDrive(d.id).catch((err: unknown) => {
+              console.error("openDrive failed", err);
+              // La chaîne brute part au journal ; le disque débranché entre-temps se voit à
+              // l'Actualiser suivant, comme pour Éjecter.
+              say(t.ouvrirEchec);
+            });
+          }
+        : undefined,
+    },
     { label: t.formater, onPick: d.has_media ? () => openUsbFormatModal(d) : undefined, danger: true },
     {
       label: t.ejecter,

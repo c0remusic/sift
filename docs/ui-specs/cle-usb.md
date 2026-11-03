@@ -77,8 +77,10 @@ disponible, point de montage, état S.M.A.R.T. ») et ce que l'écran en fait :
 
 ### Reste
 
-- **Ouvrir dans l'explorateur** (clic droit, § Interactions) : aucune commande IPC ne l'expose —
-  omis, pas simulé.
+- ~~**Ouvrir dans l'explorateur**~~ — livré le 2026-11-03 sous le libellé neutre « Ouvrir le
+  disque » (explorateur sous Windows, Finder sous macOS, comme « Ouvrir l'emplacement » de
+  Bibliothèque). Commande `open_drive` : un id de disque, jamais un chemin — le backend relit son
+  énumération et n'ouvre qu'une lettre ou un `/Volumes/…`.
 - **Vérification avec un disque branché** : l'état vide et le squelette se vérifient dans la vraie
   fenêtre ; les états avec disque (occupation, faits, Éjecter, sheet) demandent une clé — manuelle,
   par Antoine.
@@ -94,8 +96,8 @@ disponible, point de montage, état S.M.A.R.T. ») et ce que l'écran en fait :
 | **Disque non formaté** | Entrée « Disque N » ; zone C : tête, « Aucun volume monté — rien à parcourir », faits avec « — », Formater… seul |
 | **Lecteur sans média** | Entrée « vide » ; zone C : tête seule et la phrase qui explique la lettre fantôme de l'explorateur |
 | **Formatage — confirmation** | Sheet attachée. Nom du volume à retaper, confirmation **armée et horodatée**. Jamais `window.confirm()` |
-| **Formatage en cours** | Sheet bloquante mais **annulable**, barre déterminée, étape en texte. Depuis le 2026-09-09 l'étape d'écriture du FAT32 dit les Mo écrits (tous les 16 Mio) — l'écriture elle-même passe de plusieurs minutes à quelques secondes sur 500 Go (`sector_io.rs`, fenêtre de 1 Mio au lieu d'un secteur). **Non tenu encore** : ni barre déterminée, ni annulation — `formatDrive` n'a pas de chemin d'annulation |
-| **Formatage — rapport** | Résumé : système de fichiers produit, capacité utile, sortie claire |
+| **Formatage en cours** | Sheet bloquante, **non annulable**, étape en texte. Pendant l'écriture FAT32, **barre de pourcentage** (`<progress>` de la sheet de lot) et « N % · … Mo écrits » : le total est mesuré par un rejeu à blanc du même chemin d'écriture (`fat32::format_byte_count`), marqueur `PCT:` du fichier d'étape. Les autres étapes (autorisation, partitionnement, exFAT par `Format-Volume`) n'ont pas de total connu : texte seul, pas de pourcentage inventé |
+| **Formatage — rapport** | La sheet devient son résumé, relu sur le disque et non recopié du choix : système de fichiers, espace utilisable, point de montage, bouton Terminer. La liste se relit à la sortie du rapport. Volume pas encore monté : la sheet le dit |
 | **Élévation refusée** | Message explicite : ce qui a été refusé et ce que l'utilisateur peut faire. Sentinelle `ELEVATION_DECLINED` |
 | **Disque disparu en cours d'opération** | Sentinelle `DRIVE_VANISHED` — l'opération s'arrête, l'état est dit, rien n'est supposé |
 | **Identité incohérente** | Sentinelle `IDENTITY_MISMATCH` — le volume n'est plus celui qui a été ciblé. L'opération est refusée, pas retentée |
@@ -111,8 +113,21 @@ jamais les réécrire côté TS.
 ### Souris
 
 - **Clic** ligne : sélectionne, remplit le détail.
-- **Clic droit** : Formater · Éjecter · Ouvrir dans l'explorateur · Actualiser.
-- **Clic** sur un segment du graphique d'occupation : filtre le détail sur ce format.
+- **Clic droit** : Ouvrir le disque · Formater · Éjecter · Actualiser.
+- **Clic** sur un segment du graphique d'occupation (ou sur sa légende) : déplie le détail et fait
+  clignoter la ligne de ce format (`usage-chart.ts::revealRow`). Pas de filtre.
+
+### Décision — 2026-11-03 : segment, annulation (Antoine)
+
+- **Segment : mise en évidence, pas filtre.** Cette spec (2026-08-19) disait « filtre le détail sur
+  ce format » ; le graphique validé le 2026-08-01 (`02b1a1c`) faisait déjà clignoter la ligne, et
+  aucune décision ne les départageait. Retenu : le clignotement. Le détail ne compte que quelques
+  lignes, un filtre y masquerait le contexte, et Bibliothèque partage le composant.
+- **Pas d'annulation du formatage.** Une fois lancé, l'ancien contenu est déjà effacé (`Clear-Disk`
+  en élevé, FAT réécrite sur place) : s'arrêter ne restaure rien, et laisse une clé illisible
+  jusqu'au formatage suivant. L'exFAT est un seul script PowerShell dans un processus
+  administrateur, sans point d'arrêt propre. Le seul point d'annulation sûr existe déjà : refuser
+  l'invite Windows. En échange, la barre de pourcentage de l'écriture FAT32 (§ États).
 
 ### Clavier
 

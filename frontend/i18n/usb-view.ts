@@ -41,6 +41,10 @@ const fr = {
   ejecter: "Éjecter",
   ejection: "Éjection…",
   relire: "Relire le disque",
+  /** Neutre de plateforme, comme « Ouvrir l'emplacement » de Bibliothèque : explorateur sous
+   * Windows, Finder sous macOS. */
+  ouvrir: "Ouvrir le disque",
+  ouvrirEchec: "Impossible d'ouvrir le disque",
 };
 
 const en: typeof fr = {
@@ -78,6 +82,8 @@ const en: typeof fr = {
   ejecter: "Eject",
   ejection: "Ejecting…",
   relire: "Rescan drive",
+  ouvrir: "Open drive",
+  ouvrirEchec: "Couldn't open the drive",
 };
 
 export const D = { fr, en };

@@ -47,6 +47,63 @@ pub fn eject_drive(drive_id: String) -> Result<(), String> {
     b.eject(&drive).map_err(|e| e.to_string())
 }
 
+/// Ouvre la racine du volume de `drive_id` dans l'explorateur (le Finder sur macOS) — le « Ouvrir
+/// dans l'explorateur » du clic droit de Clé USB (spec `cle-usb.md` § Interactions).
+///
+/// Prend un identifiant de disque, jamais un chemin, pour la même raison que `reveal_track` : le
+/// chemin vient d'une énumération fraîche du backend, et le frontend ne peut pas pointer
+/// l'explorateur ailleurs. Un disque débranché entre-temps rend `DRIVE_VANISHED` ; un disque sans
+/// volume monté, une erreur qui le dit.
+///
+/// ⚠️ `explorer.exe` sort en code NON nul même quand il réussit (même piège que `reveal_track`) :
+/// seul l'échec du lancement est remonté.
+#[tauri::command]
+pub fn open_drive(drive_id: String) -> Result<(), String> {
+    let drive = backend()
+        .list()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|d| d.id == drive_id)
+        .ok_or_else(|| usb_format::DRIVE_VANISHED.to_string())?;
+    let target = volume_root(&drive.mount).ok_or_else(|| {
+        crate::tr!(
+            "Aucun volume monté sur ce disque — rien à ouvrir.",
+            "No volume is mounted on this drive — nothing to open."
+        )
+    })?;
+    #[cfg(target_os = "windows")]
+    let program = "explorer";
+    #[cfg(not(target_os = "windows"))]
+    let program = "open";
+    std::process::Command::new(program)
+        .arg(&target)
+        .spawn()
+        .map_err(|e| {
+            crate::tr!(
+                "ouverture de l'explorateur impossible : {e}",
+                "couldn't open the file manager: {e}"
+            )
+        })?;
+    Ok(())
+}
+
+/// Racine à ouvrir pour `mount` (`RemovableDrive::mount`) : la PREMIÈRE lettre d'une liste
+/// « E:, F: », suffixée de `\` (`explorer E:` sans barre ouvre le dossier courant de ce lecteur,
+/// pas sa racine), ou un point de montage macOS absolu. Tout le reste est refusé plutôt que passé
+/// à un processus : `mount` vient de notre énumération, une forme inattendue signale un problème
+/// en amont.
+fn volume_root(mount: &str) -> Option<String> {
+    let first = mount.split(',').next()?.trim();
+    let b = first.as_bytes();
+    if b.len() == 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
+        return Some(format!("{first}\\"));
+    }
+    if first.starts_with("/Volumes/") && !first.contains("..") {
+        return Some(first.to_string());
+    }
+    None
+}
+
 /// Format `drive_id` to `fs`. `identity` must match what the frontend last saw for this drive —
 /// re-checked against a fresh listing immediately before formatting (anti-race guard); fails with
 /// `"IDENTITY_MISMATCH"` or `"DRIVE_VANISHED"` if a different drive now answers to the same id
@@ -61,6 +118,16 @@ pub fn format_drive(
     fs: TargetFs,
     label: String,
 ) -> Result<(), String> {
+    // Le fichier d'étape se réinitialise AVANT l'énumération, pas après. Il garde l'état terminal
+    // du formatage précédent (`STEP_DONE`), et le frontend commence à le sonder 400 ms après le
+    // clic, pendant que l'énumération WMI prend plusieurs secondes : un ancien `DONE` lu là
+    // annonçait comme réussi un formatage qui n'avait pas commencé (trouvé le 2026-11-03, en
+    // posant le rapport de fin). Tenu par `l_etape_est_reinitialisee_avant_l_enumeration`.
+    #[cfg(target_os = "windows")]
+    usb_format::privileged::write_step(&crate::tr!(
+        "Autorisation Windows demandée…",
+        "Asking Windows for permission…"
+    ));
     let b = backend();
     // Durée de l'énumération : elle se fait ICI, sur le fil de la commande, avant tout formatage —
     // une énumération WMI lente se lirait comme un formatage lent (chronométrage du 2026-10-07).
@@ -95,10 +162,6 @@ pub fn format_drive(
     // construction — c'est le gel constaté au premier formatage réel, pas une lenteur.
     #[cfg(target_os = "windows")]
     {
-        usb_format::privileged::write_step(&crate::tr!(
-            "Autorisation Windows demandée…",
-            "Asking Windows for permission…"
-        ));
         std::thread::spawn(move || {
             let debut = std::time::Instant::now();
             let outcome = backend().format(&confirmed, fs, &label);
@@ -120,5 +183,51 @@ pub fn format_drive(
     #[cfg(not(target_os = "windows"))]
     {
         b.format(&confirmed, fs, &label).map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::volume_root;
+
+    #[test]
+    fn la_racine_ouverte_est_celle_de_la_premiere_lettre() {
+        assert_eq!(volume_root("E:").as_deref(), Some("E:\\"));
+        assert_eq!(volume_root("E:, F:").as_deref(), Some("E:\\"));
+        assert_eq!(volume_root("/Volumes/DJ").as_deref(), Some("/Volumes/DJ"));
+    }
+
+    /// Test de source, même forme que les `…_reste_hors_du_fil_de_la_fenetre` : l'ordre se lit
+    /// dans le corps de `format_drive`, qu'aucun test ne peut exécuter sans WMI. Remonter
+    /// l'écriture d'étape APRÈS `.list()` rouvre la course décrite dans la commande.
+    #[test]
+    fn l_etape_est_reinitialisee_avant_l_enumeration() {
+        let src = include_str!("ipc_usb.rs");
+        let start = src.find("pub fn format_drive(").expect("format_drive");
+        let body = &src[start..];
+        let step = body
+            .find("write_step(")
+            .expect("write_step dans format_drive");
+        let list = body.find(".list()").expect(".list() dans format_drive");
+        assert!(
+            step < list,
+            "le fichier d'étape doit être réinitialisé avant l'énumération"
+        );
+    }
+
+    #[test]
+    fn une_forme_inattendue_n_atteint_jamais_un_processus() {
+        for bad in [
+            "",
+            "E",
+            "EE:",
+            "E:\\..",
+            "C:\\Windows",
+            "/Volumes/../etc",
+            "/etc",
+            "\"E:\"",
+        ] {
+            assert_eq!(volume_root(bad), None, "{bad:?}");
+        }
     }
 }

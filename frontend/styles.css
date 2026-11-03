@@ -3099,6 +3099,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    tant qu'on la survole) — mesuré par survol réel CDP le 2026-10-07, la seconde ne s'ouvrait pas. */
 .sift-usbfmt-titlerow .sift-infotip-bubble{top:auto;bottom:calc(100% + var(--space-6))}
 .sift-usbfmt-actions{display:flex;justify-content:flex-end;gap:var(--space-8);margin-top:var(--space-4)}
+/* Barre de pourcentage de l'écriture FAT32 (2026-11-03) : la `<progress>` de la sheet de lot
+   (.sift-bs-bar), même piste, même encre d'accent. Rapport : les faits de Clé USB (.sift-usb-fact),
+   en trois colonnes — la sheet fait 380 px, la grille de quatre de la zone C n'y tient pas. */
+.sift-usbfmt-progress{display:flex;flex-direction:column;gap:var(--space-6)}
+.sift-usbfmt-pct{font-variant-numeric:tabular-nums;color:var(--color-text-primary)}
+.sift-usbfmt-report{margin:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-12)}
 /* DESTRUCTIF = un bouton NORMAL à encre rouge (2026-08-19). HIG : le rôle `destructive` de SwiftUI
    ne peint pas un aplat rouge, il teinte le libellé ; le kit n'a pas non plus de bouton rouge plein.
    Ce bouton portait un fond `--color-background-danger` pâle, ce qui le faisait lire comme un

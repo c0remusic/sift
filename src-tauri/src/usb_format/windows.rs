@@ -554,22 +554,14 @@ impl WindowsBackend {
         // L'étape dit combien est parti, pas seulement qu'on écrit : sur ce SSD de 500 Go le
         // zéro-remplissage des FAT (~122 Mo) a laissé l'étape figée plusieurs minutes le
         // 2026-09-09 — « l'impression que l'écran est bloqué ». Un mot tous les 16 Mio, pas plus :
-        // `write_step` recrée le fichier d'étape à chaque appel.
-        let mut last_reported: u64 = 0;
+        // `write_step` recrée le fichier d'étape à chaque appel. Depuis le 2026-11-03 il porte
+        // aussi le pourcentage (`privileged::fat32_write_progress`).
+        let total = super::fat32::format_byte_count(volume_bytes, label).unwrap_or(0);
         let aligned = super::sector_io::SectorIo::new(
             volume.as_file_mut(),
             u64::from(super::fat32::BYTES_PER_SECTOR),
         )
-        .with_progress(Box::new(move |written| {
-            if written - last_reported >= 16 << 20 {
-                last_reported = written;
-                let mo = written / 1_000_000;
-                super::privileged::write_step(&crate::tr!(
-                    "Écriture du système de fichiers FAT32… {mo} Mo écrits",
-                    "Writing the FAT32 file system… {mo} MB written"
-                ));
-            }
-        }));
+        .with_progress(super::privileged::fat32_write_progress(total));
         let ecrit = super::fat32::write_fat32(aligned, volume_bytes, label)
             .map_err(|e| UsbFormatError::Format(e.to_string()));
         chrono.etape("écriture FAT32");

@@ -128,6 +128,52 @@ pub const STEP_DONE: &str = "DONE";
 /// table de correspondance. Miroir de `shared/contracts.ts`.
 pub const STEP_FAILED_PREFIX: &str = "FAILED:";
 
+/// Préfixe d'une étape qui porte son pourcentage : `PCT:<0..100>|<texte>`. Non terminal. Seule
+/// l'écriture FAT32 en dépose, parce que c'est la seule étape dont le total se connaît
+/// (`fat32::format_byte_count`) — l'exFAT de `Format-Volume`, le partitionnement et l'attente de
+/// la lettre ne rendent aucune progression, et un pourcentage inventé mentirait. Miroir de
+/// `shared/contracts.ts`.
+pub const STEP_PROGRESS_PREFIX: &str = "PCT:";
+
+/// La ligne d'étape avec pourcentage. Pure, pour qu'un test tienne le format que le frontend
+/// découpe (`usb-format-step.ts`). Plafonnée à 100 : un total sous-estimé ne doit pas afficher 103 %.
+pub fn progress_line(written: u64, total: u64, text: &str) -> String {
+    // Total nul : 0 %, pas une division par zéro.
+    let pct = written
+        .saturating_mul(100)
+        .checked_div(total)
+        .unwrap_or(0)
+        .min(100);
+    format!("{STEP_PROGRESS_PREFIX}{pct}|{text}")
+}
+
+/// Rappel de progression de l'écriture FAT32, partagé par ses deux chemins (`windows.rs` sans
+/// élévation, `run` ici en élevé). Un mot tous les 16 Mio, pas plus : `write_step` recrée le
+/// fichier d'étape à chaque appel. Le texte garde les Mo écrits — la barre dit où on en est, le
+/// texte dit que ça bouge.
+///
+/// `total` à 0 (comptage impossible) : le texte seul, sans pourcentage. Pas un échec silencieux —
+/// le comptage échoue exactement quand `write_fat32` échouera aussitôt après, avec sa cause.
+#[cfg(target_os = "windows")]
+pub fn fat32_write_progress(total: u64) -> super::sector_io::Progress {
+    let mut last_reported: u64 = 0;
+    Box::new(move |written| {
+        if written - last_reported >= 16 << 20 {
+            last_reported = written;
+            let mo = written / 1_000_000;
+            let text = crate::tr!(
+                "Écriture du système de fichiers FAT32… {mo} Mo écrits",
+                "Writing the FAT32 file system… {mo} MB written"
+            );
+            if total == 0 {
+                write_step(&text);
+            } else {
+                write_step(&progress_line(written, total, &text));
+            }
+        }
+    })
+}
+
 /// Drapeau qui porte la langue de l'interface au processus élevé, suivi de `fr` ou `en`. Sans
 /// lui, ce processus — lancé à neuf, sans base ni interface — écrirait ses étapes en français
 /// sous une interface anglaise.
@@ -363,20 +409,11 @@ pub fn run(job: &PrivilegedJob) -> i32 {
             // A travers l'adaptateur d'alignement : un handle de volume refuse les E/S qui ne
             // tombent pas sur des multiples entiers de secteur, et `fatfs` écrit comme dans un
             // fichier. C'est ce qui a fait échouer le premier formatage réel.
-            // Même mot de progression que le chemin sans élévation (`windows.rs`) : tous les
-            // 16 Mio, ce processus est le seul à pouvoir dire au parent que ça avance.
-            let mut last_reported: u64 = 0;
+            // Même progression que le chemin sans élévation (`windows.rs`) : ce processus est le
+            // seul à pouvoir dire au parent que ça avance.
+            let total = fat32::format_byte_count(total_bytes, &job.label).unwrap_or(0);
             let aligned = SectorIo::new(volume.as_file_mut(), u64::from(fat32::BYTES_PER_SECTOR))
-                .with_progress(Box::new(move |written| {
-                    if written - last_reported >= 16 << 20 {
-                        last_reported = written;
-                        let mo = written / 1_000_000;
-                        write_step(&crate::tr!(
-                            "Écriture du système de fichiers FAT32… {mo} Mo écrits",
-                            "Writing the FAT32 file system… {mo} MB written"
-                        ));
-                    }
-                }));
+                .with_progress(fat32_write_progress(total));
             fat32::write_fat32(aligned, total_bytes, &job.label)
         }
         // exFAT passe par diskpart, qui le sait faire sans plafond — ce mode ne devrait pas être
@@ -525,6 +562,7 @@ mod tests {
         for (name, value) in [
             ("STEP_DONE", STEP_DONE),
             ("STEP_FAILED_PREFIX", STEP_FAILED_PREFIX),
+            ("STEP_PROGRESS_PREFIX", STEP_PROGRESS_PREFIX),
         ] {
             let expected = format!("export const {name} = \"{value}\";");
             assert!(
@@ -547,6 +585,19 @@ mod tests {
             assert!(line.starts_with(STEP_FAILED_PREFIX));
             assert_eq!(&line[STEP_FAILED_PREFIX.len()..], msg);
         }
+    }
+
+    /// Le format que `frontend/usb-format-step.ts` découpe : préfixe, entier, `|`, texte. Le texte
+    /// peut lui-même contenir un `|` — le frontend coupe au PREMIER. Plafond à 100, et un total nul
+    /// ne divise pas par zéro.
+    #[test]
+    fn la_ligne_de_progression_porte_un_pourcentage_entier_borne() {
+        assert_eq!(progress_line(0, 200, "a"), "PCT:0|a");
+        assert_eq!(progress_line(50, 200, "a|b"), "PCT:25|a|b");
+        assert_eq!(progress_line(199, 200, "a"), "PCT:99|a");
+        assert_eq!(progress_line(200, 200, "a"), "PCT:100|a");
+        assert_eq!(progress_line(300, 200, "a"), "PCT:100|a");
+        assert_eq!(progress_line(5, 0, "a"), "PCT:0|a");
     }
 
     /// Un index illisible doit ARRÊTER le processus, jamais retomber sur une valeur par défaut :

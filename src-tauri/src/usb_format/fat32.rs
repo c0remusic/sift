@@ -138,6 +138,65 @@ pub fn write_fat32<T: Read + Write + Seek>(
     fatfs::format_volume(target, options).map_err(|e| Fat32Error::Write(e.to_string()))
 }
 
+/// Octets que `write_fat32` poussera vers le support à travers `SectorIo` pour ce volume — le
+/// dénominateur de la barre de pourcentage du formatage (spec `cle-usb.md` § États, 2026-11-03).
+///
+/// Mesuré, pas calculé : le formatage est rejoué à blanc, par le MÊME chemin (`SectorIo` à sa
+/// fenêtre de production, `write_fat32` aux mêmes options), sur un support qui jette ce qu'on lui
+/// écrit. Une formule (secteurs réservés + deux FAT + un cluster) dépendrait de la taille de cluster
+/// que `fatfs` choisit et de la façon dont il zéro-remplit, deux choses qu'il ne publie pas ; le
+/// rejeu, lui, ne peut pas diverger de l'écriture réelle. Coût : le zéro-remplissage des FAT en
+/// mémoire, ~122 Mo copiés pour un volume de 500 Go.
+pub fn format_byte_count(total_bytes: u64, label: &str) -> Result<u64, Fat32Error> {
+    let seen = std::rc::Rc::new(std::cell::Cell::new(0u64));
+    let sink = seen.clone();
+    let io =
+        super::sector_io::SectorIo::new(Discard::new(total_bytes), u64::from(BYTES_PER_SECTOR))
+            .with_progress(Box::new(move |n| sink.set(n)));
+    write_fat32(io, total_bytes, label)?;
+    Ok(seen.get())
+}
+
+/// Support de `format_byte_count` : rend des zéros à la lecture, jette les écritures, connaît sa
+/// taille pour `SeekFrom::End`.
+struct Discard {
+    pos: u64,
+    len: u64,
+}
+
+impl Discard {
+    fn new(len: u64) -> Self {
+        Discard { pos: 0, len }
+    }
+}
+
+impl Read for Discard {
+    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        out.fill(0);
+        Ok(out.len())
+    }
+}
+
+impl Write for Discard {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Seek for Discard {
+    fn seek(&mut self, from: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.pos = match from {
+            std::io::SeekFrom::Start(n) => n,
+            std::io::SeekFrom::Current(d) => self.pos.saturating_add_signed(d),
+            std::io::SeekFrom::End(d) => self.len.saturating_add_signed(d),
+        };
+        Ok(self.pos)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,6 +292,30 @@ mod tests {
     fn volume_label_is_written_and_read_back() {
         let fs = format_and_reopen(40 * 1024 * 1024 * 1024u64, "SIFT_TEST");
         assert_eq!(fs.volume_label().trim_end(), "SIFT_TEST");
+    }
+
+    /// Le dénominateur de la barre doit être EXACTEMENT ce que l'écriture réelle pousse, sinon la
+    /// barre s'arrête avant 100 % ou le dépasse. Écriture réelle sur fichier, à travers `SectorIo`
+    /// comme en production, comparée au rejeu à blanc. Deux tailles : une sous le plafond de
+    /// Windows, une au-delà, qui n'ont pas la même taille de cluster.
+    #[test]
+    fn the_dry_run_counts_exactly_what_the_real_format_writes() {
+        for total in [8 * 1024 * 1024 * 1024u64, 40 * 1024 * 1024 * 1024u64] {
+            let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(tmp.path())
+                .expect("open rw");
+            let seen = std::rc::Rc::new(std::cell::Cell::new(0u64));
+            let sink = seen.clone();
+            let io = crate::usb_format::sector_io::SectorIo::new(file, u64::from(BYTES_PER_SECTOR))
+                .with_progress(Box::new(move |n| sink.set(n)));
+            write_fat32(io, total, "SIFT").expect("format");
+            let predicted = format_byte_count(total, "SIFT").expect("count");
+            assert!(predicted > 0, "{total}: rien à écrire ?");
+            assert_eq!(predicted, seen.get(), "{total} octets de volume");
+        }
     }
 
     /// Le secteur d'amorçage doit porter la signature 0x55AA, sans quoi aucun système ne

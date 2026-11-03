@@ -13,9 +13,11 @@
 // pas une dictée ; c'est ce qui reste.
 import { ELEVATION_DECLINED, STEP_DONE, STEP_FAILED_PREFIX } from "../shared/contracts";
 import { esc } from "./dom";
-import { formatDrive, formatStep, type RemovableDrive, type TargetFs } from "./ipc";
+import { formatDrive, formatStep, listRemovableDrives, type RemovableDrive, type TargetFs } from "./ipc";
 import { driveDisplayName } from "./usb-row";
 import { humanizeFormatError } from "./usb-format-error";
+import { parseFormatStep } from "./usb-format-step";
+import { formatGo } from "./usage-chart";
 import { T } from "./i18n/usb-format-modal";
 
 const CONFIRM_REARM_MS = 400; // mirrors sift-live.ts's batch-confirm floor (see BATCH_CONFIRM_THRESHOLD)
@@ -69,6 +71,14 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   // autre processus, et « on ne sait pas ce qui se passe » était le reproche exact.
   let step = "";
   let stepTimer: number | null = null;
+  // Pourcentage de l'étape courante, quand elle en porte un (écriture FAT32 seulement — les autres
+  // étapes ne connaissent pas leur total, et la barre ne s'affiche pas pour elles).
+  let pct: number | null = null;
+  // Formatage terminé : la sheet devient son rapport (spec § États, « Formatage — rapport »).
+  // `fresh` = le disque relu après coup ; `undefined` tant que la relecture court, `null` quand
+  // elle n'a rien rendu d'exploitable.
+  let done = false;
+  let fresh: RemovableDrive | null | undefined;
 
   const overlay = document.createElement("div");
   overlay.id = "sift-usbfmt-overlay";
@@ -98,6 +108,40 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
     if (stepTimer !== null) window.clearInterval(stepTimer);
     stepTimer = null;
     overlay.remove();
+    // L'écran relit sa liste à la sortie du rapport, pas à la fin du formatage : sinon la liste
+    // se repeint derrière la sheet pendant qu'on lit le résumé.
+    if (done) window.dispatchEvent(new CustomEvent("sift:usb-format-done", { detail: { ok: true } }));
+  }
+
+  /** Le rapport : ce qui a été produit, relu sur le disque — pas ce qui a été demandé. Le système
+   * de fichiers et l'espace viennent de la relecture (`listRemovableDrives`) ; si elle ne rend rien
+   * de monté, le rapport le dit au lieu de recopier le choix de l'utilisateur. */
+  function renderReport(): void {
+    const t = T();
+    const fact = (k: string, v: string): string =>
+      `<div class="sift-usb-fact"><dt>${k}</dt><dd>${v}</dd></div>`;
+    let body: string;
+    if (fresh === undefined) {
+      body = `<div class="sift-usbfmt-desc">${t.relecture}</div>`;
+    } else if (fresh && fresh.mount) {
+      body =
+        '<dl class="sift-usbfmt-report">' +
+        fact(t.rapportFormat, esc(fresh.current_fs)) +
+        fact(t.rapportUtile, formatGo(fresh.free_bytes)) +
+        fact(t.rapportMontage, esc(fresh.mount)) +
+        "</dl>";
+    } else {
+      body = `<div class="sift-usbfmt-desc">${t.relectureVide}</div>`;
+    }
+    card.innerHTML =
+      `<div class="sift-usbfmt-title">${t.rapportTitre(esc(displayName))}</div>` +
+      body +
+      '<div class="sift-usbfmt-actions">' +
+      `<button type="button" id="sift-usbfmt-done" class="sift-settings-btn">${t.terminer}</button>` +
+      "</div>";
+    const btn = card.querySelector<HTMLButtonElement>("#sift-usbfmt-done");
+    btn?.addEventListener("click", close);
+    btn?.focus();
   }
 
   const sizeGb = (drive.size_bytes / 1_000_000_000).toFixed(1);
@@ -107,6 +151,10 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   const needsElevation = () => fs === "fat32" && drive.size_bytes > WINDOWS_FAT32_CEILING;
 
   function render() {
+    if (done) {
+      renderReport();
+      return;
+    }
     const t = T();
     // Ce que la bulle du système de fichiers explique : l'exFAT incertain sur les CDJ, et
     // l'invite administrateur au-delà de 32 Go. Pas de bulle quand il n'y a rien à dire.
@@ -152,6 +200,12 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       esc(volumeName) +
       '"></div>' +
 
+      (busy && pct !== null
+        ? '<div class="sift-usbfmt-progress">' +
+          `<progress class="sift-bs-bar" value="${pct}" max="100"></progress>` +
+          `<div class="sift-bs-step"><span class="sift-usbfmt-pct">${t.pourcent(pct)}</span> · <span class="sift-usbfmt-steptext">${esc(step)}</span></div>` +
+          "</div>"
+        : "") +
       '<div class="sift-usbfmt-actions">' +
       '<button type="button" id="sift-usbfmt-cancel" class="sift-settings-btn">' +
       t.annuler +
@@ -161,12 +215,14 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       ">" +
       (busy
         ? '<span class="sift-bt-spin" style="margin-right:var(--space-6);vertical-align:-2px"></span>' +
-          esc(step || t.formatageEnCours)
+          // Avec une barre, l'étape s'écrit sous elle : le bouton ne la répète pas.
+          esc(pct !== null ? t.formatageEnCours : step || t.formatageEnCours)
         : armedAt
           ? t.confirmerArme
           : t.formater) +
       "</button>" +
-      (busy
+      // L'invite d'autorisation est passée quand l'écriture rend un pourcentage : la note se tait.
+      (busy && pct === null
         ? '<div class="sift-usbfmt-progress-note" style="margin-top:var(--space-8);font-size:var(--text-sm);color:var(--color-text-tertiary)">' +
           t.noteProgression +
           "</div>"
@@ -195,7 +251,9 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
     const cancelBtn = card.querySelector<HTMLButtonElement>("#sift-usbfmt-cancel");
     if (cancelBtn) cancelBtn.disabled = busy;
     cancelBtn?.addEventListener("click", () => {
-      if (busy) return; // formatDrive() has no cancel path — a disabled button says so honestly
+      // Pas d'annulation, tranché par Antoine le 2026-11-03 (spec cle-usb.md § États) : une fois
+      // lancé, l'ancien contenu est déjà effacé — s'arrêter ne laisserait qu'une clé illisible.
+      if (busy) return;
       close();
     });
 
@@ -223,14 +281,26 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
           if (s === STEP_DONE) {
             stopPolling();
             busy = false;
-            close();
-            window.dispatchEvent(new CustomEvent("sift:usb-format-done", { detail: { ok: true } }));
+            done = true;
+            render();
+            void listRemovableDrives()
+              .then((ds) => {
+                fresh = ds.find((d) => d.id === drive.id) ?? null;
+              })
+              .catch((e: unknown) => {
+                console.error("listRemovableDrives after format failed", e);
+                fresh = null;
+              })
+              .then(() => {
+                if (overlay.isConnected) render();
+              });
             return;
           }
           if (s.startsWith(STEP_FAILED_PREFIX)) {
             stopPolling();
             busy = false;
             step = "";
+            pct = null;
             armedAt = null;
             const cause = s.slice(STEP_FAILED_PREFIX.length);
             // Sous Windows, l'invite UAC refusée arrive PAR CE CHEMIN — le fil du backend dépose
@@ -241,8 +311,23 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
             render();
             return;
           }
-          if (s === step) return;
-          step = s;
+          // Fréquence : au plus une étape neuve par sondage (400 ms) ; pendant l'écriture FAT32 le
+          // backend en dépose une tous les 16 Mio. Une barre déjà posée se MUTE — reconstruire la
+          // carte à chaque cran couperait la transition de `<progress>`.
+          const next = parseFormatStep(s);
+          if (next.text === step && next.pct === pct) return;
+          const hadBar = pct !== null;
+          step = next.text;
+          pct = next.pct;
+          const bar = card.querySelector<HTMLProgressElement>(".sift-usbfmt-progress progress");
+          if (hadBar && pct !== null && bar) {
+            bar.value = pct;
+            const pctEl = card.querySelector(".sift-usbfmt-pct");
+            const textEl = card.querySelector(".sift-usbfmt-steptext");
+            if (pctEl) pctEl.textContent = T().pourcent(pct);
+            if (textEl) textEl.textContent = step;
+            return;
+          }
           render();
         });
       }, 400);
@@ -259,6 +344,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
           stopPolling();
           busy = false;
           step = "";
+          pct = null;
           armedAt = null;
           console.error("formatDrive failed", e);
           // Les deux sentinelles du garde anti-course passent EN PREMIER et coupent le chemin de

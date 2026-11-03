@@ -558,6 +558,10 @@ export const formatStep = (): Promise<string> => invoke("format_step");
  * quand le système refuse — rien n'a été démonté dans ce cas. */
 export const ejectDrive = (driveId: string): Promise<void> => invoke("eject_drive", { driveId });
 
+/** Ouvre la racine du volume de `driveId` dans l'explorateur (Finder sur macOS). Un id, jamais un
+ * chemin : le backend relit son énumération. Rejette avec `"DRIVE_VANISHED"` si le disque est parti. */
+export const openDrive = (driveId: string): Promise<void> => invoke("open_drive", { driveId });
+
 /** Une ligne du graphique d'occupation : un format, ce qu'il pèse, combien de fichiers.
  * Miroir de `volume_usage::ExtUsage`. */
 export interface ExtUsage {

@@ -73,6 +73,11 @@ export const STEP_DONE = "DONE";
  * message may itself be a sentinel — `ELEVATION_DECLINED` when the UAC prompt was dismissed. */
 export const STEP_FAILED_PREFIX = "FAILED:";
 
+/** NON-terminal step carrying its percentage: `PCT:<0..100>|<text>`. Only the FAT32 write emits it —
+ * the only step whose total is known (`fat32::format_byte_count`). Mirror of Rust
+ * `usb_format::privileged::STEP_PROGRESS_PREFIX`, same test; split by `frontend/usb-format-step.ts`. */
+export const STEP_PROGRESS_PREFIX = "PCT:";
+
 /** Default filename template — the value `filename_template` holds until the user changes it.
  * Mirror of Rust `settings::DEFAULT_TEMPLATE`; the two literals MUST stay identical, held by
  * `filing.rs::default_template_matches_contracts_ts`. Placeholders, and there are only these

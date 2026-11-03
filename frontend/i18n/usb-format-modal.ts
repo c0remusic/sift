@@ -53,6 +53,17 @@ const fr = {
   errAcces: "Accès refusé — ferme tout programme utilisant ce disque et réessaie.",
   errIntrouvable: "Disque introuvable — a-t-il été débranché pendant le formatage ?",
   errEchec: "Échec du formatage. Vérifie que le disque est bien branché et réessaie.",
+  /** Rapport après formatage (spec `cle-usb.md` § États, « Formatage — rapport »). */
+  rapportTitre: (nom: string) => `${nom} est formaté`,
+  rapportFormat: "Système de fichiers",
+  rapportUtile: "Espace utilisable",
+  rapportMontage: "Point de montage",
+  relecture: "Relecture du disque…",
+  relectureVide:
+    "Windows n'a pas encore monté le volume : sa capacité n'a pas pu être relue. " +
+    "Actualise la liste dans un instant.",
+  terminer: "Terminer",
+  pourcent: (n: number) => `${n} %`,
 };
 
 const en: typeof fr = {
@@ -92,6 +103,16 @@ const en: typeof fr = {
   errAcces: "Access denied — close any program using this drive and try again.",
   errIntrouvable: "Drive not found — was it unplugged during formatting?",
   errEchec: "Formatting failed. Check that the drive is plugged in and try again.",
+  rapportTitre: (nom) => `${nom} is formatted`,
+  rapportFormat: "File system",
+  rapportUtile: "Usable space",
+  rapportMontage: "Mount point",
+  relecture: "Reading the drive…",
+  relectureVide:
+    "Windows hasn't mounted the volume yet, so its capacity couldn't be read. " +
+    "Refresh the list in a moment.",
+  terminer: "Done",
+  pourcent: (n) => `${n}%`,
 };
 
 export const D = { fr, en };
