@@ -3,7 +3,7 @@
 // (« ffmpeg: spawn failed: … »), suivie d'un message d'E/S que Windows traduit.
 import { afterEach, describe, expect, it } from "vitest";
 import { setCurrentLang } from "../frontend/i18n";
-import { conversionFailureText } from "../frontend/conversion-error";
+import { conversionFailureText, failedBannerLabel } from "../frontend/conversion-error";
 
 afterEach(() => setCurrentLang("fr"));
 
@@ -35,5 +35,24 @@ describe("conversionFailureText", () => {
     expect(conversionFailureText("ffmpeg: exited with status 1")).toBeNull();
     expect(conversionFailureText("Fichier source introuvable")).toBeNull();
     expect(conversionFailureText("")).toBeNull();
+  });
+});
+
+// Issue #85 : le bandeau persistant d'une conversion échouée disait « Conversion échouée » sans la
+// cause, alors que le toast la donnait et disparaît au bout de quelques secondes.
+describe("failedBannerLabel", () => {
+  it("nomme la cause quand elle est connue", () => {
+    expect(failedBannerLabel(WINDOWS_FR)).toBe(
+      "Conversion échouée — FFmpeg est introuvable — Sift ne peut convertir aucun fichier tant qu'il manque. Réinstaller l'app le rétablit.",
+    );
+  });
+
+  it("garde le libellé nu pour une erreur sans cause lisible", () => {
+    expect(failedBannerLabel("ffmpeg: exited with status 1")).toBe("Conversion échouée");
+  });
+
+  it("parle la langue de l'interface", () => {
+    setCurrentLang("en");
+    expect(failedBannerLabel(WINDOWS_EN)).toMatch(/^Conversion failed — FFmpeg can't be found/);
   });
 });

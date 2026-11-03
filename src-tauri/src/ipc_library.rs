@@ -764,7 +764,10 @@ mod rekordbox_tests {
     /// `hors_du_fil` délègue à `spawn_blocking` — sinon la feuille de synchronisation gèle.
     #[test]
     fn ecritures_masterdb_restent_hors_du_fil_de_la_fenetre() {
-        let source = include_str!("ipc_library.rs");
+        // Fins de ligne normalisées : le checkout de la CI Windows est en CRLF (`autocrlf`), et le
+        // motif `"\n}\n"` qui borne chaque commande n'y existait plus — rouge en CI, vert en local
+        // sur un fichier LF (2026-11-03, 7ec6716).
+        let source = include_str!("ipc_library.rs").replace("\r\n", "\n");
         for nom in [
             "rekordbox_masterdb_apply_repairs",
             "rekordbox_masterdb_apply_metadata_syncs",

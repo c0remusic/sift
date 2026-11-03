@@ -21,6 +21,7 @@ const fr = {
   categoriesAria: "Catégories de réglages",
   colonneTitre: "Réglages",
   erreurEnregistrement: "Erreur d'enregistrement.",
+  enregistre: "Enregistré.",
 
   // Conversion (issue #71). Les libellés d'option (« 320 kbps », « 44,1 kHz ») sont composés par
   // `encode-profile.ts` : le nombre suit la locale, seule l'unité de profondeur se traduit ici.
@@ -105,6 +106,7 @@ const en: typeof fr = {
   categoriesAria: "Settings categories",
   colonneTitre: "Settings",
   erreurEnregistrement: "Save failed.",
+  enregistre: "Saved.",
 
   descConversion:
     "Every conversion targets these values, even above the source. An MP3 source is moved as is, never re-encoded; an AAC, OGG or Opus file becomes an MP3 at these values. Tracks already filed are not converted again.",

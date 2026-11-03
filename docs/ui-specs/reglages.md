@@ -84,8 +84,14 @@ libellé posé au-dessus du champ, bouton Enregistrer sur Nommage).
 ### Reste
 
 - **Recherche de réglages** : deuxième temps, inchangé (§ Recherche).
-- **Indicateur bref « appliqué »** (§ États) : les statuts texte existent (« Modèle enregistré. »,
-  « Jeton enregistré. », 2 s) ; pas d'indicateur sur Thème ni sur la racine au-delà du re-rendu.
+- ~~**Indicateur bref « appliqué »** (§ États) : les statuts texte existent (« Modèle enregistré. »,
+  « Jeton enregistré. », 2 s) ; pas d'indicateur sur Thème ni sur la racine au-delà du re-rendu.~~
+  Fait le 2026-11-03 : « Enregistré. », même encre tertiaire et même durée (2 s), à droite du
+  segmenté sur Thème et sur les six rangées de Conversion — sur la ligne du contrôle, pour que la
+  rangée ne bouge pas quand il paraît et s'efface —, et sous le chemin de la racine, après le
+  re-rendu que changer ou oublier la racine déclenche. Rien sur Langue : elle recharge la fenêtre,
+  et l'écran rendu dans la nouvelle langue est sa confirmation. Un échec garde son propre chemin
+  (rangée en encre danger, toast du Thème) et n'affiche jamais « Enregistré. ».
 
 ## Décision — 2026-09-28 : la catégorie Conversion (#71)
 

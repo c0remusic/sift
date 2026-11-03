@@ -65,6 +65,33 @@ function sectionLabels(): Record<string, string> {
  *  catégorie à chaque frappe dans le champ de jeton. La première de la spec : Général. */
 let activeSection = "bibliotheque";
 
+/** Durée du retour « appliqué » (spec § États) : celle de « Modèle enregistré. » et « Jeton
+ *  enregistré. », qui l'avaient déjà. */
+const APPLIED_MS = 2000;
+
+/** Retour bref d'un réglage appliqué, puis l'état redevient neutre (spec § États, « Réglage
+ *  appliqué »). Encre tertiaire, celle de `.sift-settings-status` : seule la transition se dit,
+ *  rien ne reste coloré. Le texte ne s'efface que s'il est encore le sien — un échec écrit
+ *  entre-temps reste affiché. Un second retour sur le même nœud relance le délai : sans cela, le
+ *  minuteur du premier clic effacerait celui du second avant ses 2 s. */
+const appliedTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
+function flashApplied(el: HTMLElement | null, msg: string): void {
+  if (!el) return;
+  el.textContent = msg;
+  clearTimeout(appliedTimers.get(el));
+  appliedTimers.set(
+    el,
+    setTimeout(() => {
+      if (el.textContent === msg) el.textContent = "";
+    }, APPLIED_MS),
+  );
+}
+
+/** La racine s'applique en RE-RENDANT l'écran (le rappel du rail et le bouton « Oublier » en
+ *  dépendent) : le nœud de statut qui devrait confirmer est détruit dans le même geste. La
+ *  confirmation passe donc au rendu suivant par ce drapeau, consommé une seule fois. */
+let rootJustSaved = false;
+
 /** Montre une seule section et marque son entrée. Les autres sont retirées du flux par `hidden`,
  *  pas seulement masquées : un champ dans une section cachée resterait tabulable. */
 /** Appelée par le dispatch délégué de `sift-live.ts` au clic sur une catégorie. */
@@ -99,10 +126,13 @@ function positionConversionThumbs(): void {
 }
 
 /** Le segmenté d'une rangée de Conversion, au patron du Thème : piste `.sift-seg-thumbed`, pouce,
- *  une option `<button>` par valeur. Sous lui, la ligne d'état de la rangée — cachée tant qu'aucune
- *  écriture n'a échoué (une ligne vide réserverait sa hauteur minimale sous chacune des six). */
+ *  une option `<button>` par valeur. À sa droite, le retour bref « Enregistré. » — sur la même
+ *  ligne, pour qu'il paraisse et s'efface sans faire bouger la rangée. Sous lui, la ligne d'état de
+ *  la rangée — cachée tant qu'aucune écriture n'a échoué (une ligne vide réserverait sa hauteur
+ *  minimale sous chacune des six). */
 function encodeSegHtml(row: EncodeRow): string {
   return (
+    '<div class="sift-settings-field">' +
     `<div class="sift-seg sift-seg-thumbed" id="sift-seg-enc-${row.field}">` +
     '<div class="sift-seg-thumb"></div>' +
     row.options
@@ -111,6 +141,8 @@ function encodeSegHtml(row: EncodeRow): string {
           `<button class="sift-seg-opt${o.on ? " on" : ""}" data-enc-field="${row.field}" data-enc-value="${o.value}">${o.label}</button>`,
       )
       .join("") +
+    "</div>" +
+    `<span class="sift-settings-status" data-enc-applied="${row.field}"></span>` +
     "</div>" +
     `<div class="sift-settings-status" data-enc-status="${row.field}" style="color:var(--color-text-danger)" hidden></div>`
   );
@@ -158,6 +190,8 @@ function wireConversion(block: HTMLElement, initial: EncodeProfile): void {
       clicks[field] = mine;
       paint(field, value);
       say(field, "");
+      const appliedEl = block.querySelector<HTMLElement>(`[data-enc-applied="${field}"]`);
+      if (appliedEl) appliedEl.textContent = "";
       queue = queue.then(async () => {
         let failure: string | null = null;
         try {
@@ -170,6 +204,7 @@ function wireConversion(block: HTMLElement, initial: EncodeProfile): void {
         if (clicks[field] !== mine) return;
         paint(field, applied[field]);
         if (failure) say(field, failure);
+        else flashApplied(block.querySelector<HTMLElement>(`[data-enc-applied="${field}"]`), txt.enregistre);
       });
     }),
   );
@@ -208,6 +243,10 @@ export async function renderReglagesLive() {
   const content = requireEl("#content", "renderReglagesLive");
   // `viewToken` et non `token` : ce module a déjà un `token`, celui de Discogs.
   const viewToken = viewEpoch();
+  // Consommé AVANT le premier `await` : un rendu abandonné en route (garde #42 plus bas) ne doit
+  // pas laisser le drapeau confirmer, à l'ouverture suivante, une écriture d'il y a longtemps.
+  const confirmRoot = rootJustSaved;
+  rootJustSaved = false;
 
   // Remove any previous live-settings wrapper so we don't duplicate on re-render.
   // All sections live inside this single wrapper (not as separate #content siblings)
@@ -333,6 +372,7 @@ export async function renderReglagesLive() {
         '<div id="sift-lib-root-status" class="sift-settings-status"></div>',
     );
   const libStatus = libBlock.querySelector<HTMLElement>("#sift-lib-root-status");
+  if (confirmRoot) flashApplied(libStatus, txt.enregistre);
   libBlock.querySelector("#sift-lib-root-change")?.addEventListener("click", () => {
     void (async () => {
       const dir = await openFolderDialog({ directory: true, multiple: false });
@@ -342,6 +382,7 @@ export async function renderReglagesLive() {
         // Le rappel du rail (#54) est peint depuis le RÉGLAGE, pas depuis un état de vue : le
         // relire ici est ce qui le fait tomber tout de suite, sans attendre un redémarrage.
         void refreshRootWarning();
+        rootJustSaved = true;
         void renderReglagesLive();
       } catch (e) {
         if (libStatus) libStatus.textContent = txt.erreurEnregistrement;
@@ -355,6 +396,7 @@ export async function renderReglagesLive() {
         await setSetting("library_root", "");
         // Symétrique : oublier la racine doit REMETTRE le rappel, sur le même chemin.
         void refreshRootWarning();
+        rootJustSaved = true;
         void renderReglagesLive();
       } catch (e) {
         if (libStatus) libStatus.textContent = txt.erreurEnregistrement;
@@ -567,11 +609,15 @@ export async function renderReglagesLive() {
     `<div class="sift-settings-desc">${txt.descApparence}</div>` +
     rowHtml(
       txt.theme,
-      '<div class="sift-seg sift-seg-thumbed" id="sift-seg-theme">' +
+      // Retour « Enregistré. » à droite du segmenté, comme sur les rangées de Conversion.
+      '<div class="sift-settings-field">' +
+        '<div class="sift-seg sift-seg-thumbed" id="sift-seg-theme">' +
         '<div class="sift-seg-thumb"></div>' +
         themeBtn("auto", txt.auto) +
         themeBtn("light", txt.clair) +
         themeBtn("dark", txt.sombre) +
+        "</div>" +
+        '<span class="sift-settings-status" id="sift-theme-applied"></span>' +
         "</div>",
     ) +
     // Les noms de langue s'écrivent dans LEUR langue, jamais traduits : quelqu'un qui cherche à
@@ -594,8 +640,15 @@ export async function renderReglagesLive() {
       // est bien celui à l'écran. Ce que le bouton allumé ne dit pas, c'est si le choix a été
       // ENREGISTRÉ ; impasse A21 (issue #15), où l'échec d'écriture ne se voyait qu'au lancement
       // suivant, quand le thème revenait tout seul.
+      // La Langue n'en a pas : elle recharge la fenêtre, et l'écran rendu dans la nouvelle langue
+      // est sa confirmation.
+      const appliedEl = themeBlock.querySelector<HTMLElement>("#sift-theme-applied");
+      if (appliedEl) appliedEl.textContent = "";
       void setTheme(choice).then((r) => {
-        if (r.persisted) return;
+        if (r.persisted) {
+          flashApplied(appliedEl, txt.enregistre);
+          return;
+        }
         toast(humanizeError(r.error, txt.themeNonEnregistre, "setTheme"));
       });
       themeBlock.querySelectorAll("[data-theme-choice]").forEach((c) => c.classList.remove("on"));
