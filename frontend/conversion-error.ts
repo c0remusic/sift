@@ -36,3 +36,11 @@ function tagsUnreadableText(raw: string): string | null {
 export function conversionFailureText(raw: string): string | null {
   return ffmpegMissingText(raw) ?? tagsUnreadableText(raw);
 }
+
+/** Libellé du bandeau persistant d'une conversion échouée (#85) : la cause quand elle est connue.
+ *  Le toast la donnait déjà, mais il disparaît ; le bandeau reste, c'est lui qu'on relit. Même
+ *  forme que « Converti — <réserve> » du chemin de succès (`settleFilingBanner`). */
+export function failedBannerLabel(raw: string): string {
+  const reason = conversionFailureText(raw);
+  return reason ? `${T().conversionFailed} — ${reason}` : T().conversionFailed;
+}

@@ -16,7 +16,7 @@ import {
 } from "./filing-state";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
-import { conversionFailureText } from "./conversion-error";
+import { conversionFailureText, failedBannerLabel } from "./conversion-error";
 import { pickNextAfter } from "./queue-next";
 import { T } from "./i18n/filing-actions";
 import { T as ToastT } from "./i18n/filing-toast";
@@ -275,9 +275,11 @@ function showFiledConfirm(
   // state now rather than leave a spinner that would never stop. Painting the `running` case too
   // (rather than only the settled ones) is what strips the class's success-green tint off a banner
   // that announces work still in progress — the markup alone cannot do it.
+  const failure = filingFailure(trackId);
   paintFiledBanner(
     banner,
-    isFilingInFlight(trackId) ? "running" : filingFailure(trackId) ? "failed" : "done",
+    isFilingInFlight(trackId) ? "running" : failure ? "failed" : "done",
+    failure,
   );
 }
 
@@ -287,8 +289,9 @@ type FiledBannerState = "running" | "done" | "failed";
 /** Move the banner between states by MUTATING the three nodes that change (icon, label, Annuler)
  *  rather than rewriting it — same discipline as the rest of the live UI, and it keeps the ✕
  *  handler alive. Annuler is only ever exposed in `done`: before that the journal holds no batch to
- *  revert, and after a failure there is nothing to undo. */
-function paintFiledBanner(banner: HTMLElement, s: FiledBannerState): void {
+ *  revert, and after a failure there is nothing to undo. `error` is the backend's raw failure, read
+ *  only in `failed` to name its cause on the banner (#85) — the toast says it too, but fades. */
+function paintFiledBanner(banner: HTMLElement, s: FiledBannerState, error: string | null = null): void {
   const failed = s === "failed";
   const running = s === "running";
   // `.sift-filed-banner` is now NEUTRAL by class (--color-background-secondary, 2026-08-24: no
@@ -311,9 +314,11 @@ function paintFiledBanner(banner: HTMLElement, s: FiledBannerState): void {
   const label = banner.querySelector<HTMLElement>('[data-fil="filed-label"]');
   if (label) {
     const t = T();
-    label.textContent = running ? t.converting : s === "done" ? t.converted : t.conversionFailed;
+    label.textContent = running ? t.converting : s === "done" ? t.converted : failedBannerLabel(error ?? "");
     label.style.color = neutral;
   }
+  // Le chemin de destination n'a jamais été écrit : l'afficher le présenterait comme réel (#85).
+  if (failed) banner.querySelector(".sift-filed-banner-path")?.remove();
   const revert = banner.querySelector<HTMLElement>('[data-fil="revert"]');
   if (revert) {
     const shown = s === "done";
@@ -335,7 +340,7 @@ function settleFilingBanner(o: TrackFileOutcome, started: InFlightFiling | null)
   if (o.error) {
     console.error("file_track background conversion failed", o.track_id, o.error);
     if (mine) {
-      paintFiledBanner(mine, "failed");
+      paintFiledBanner(mine, "failed", o.error);
       state.filedConfirm = null;
     }
     const name = started?.name ?? `#${o.track_id}`;

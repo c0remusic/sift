@@ -489,8 +489,11 @@ source **entière**, pas le sous-ensemble filtré (patron Finder — saisir pass
 résultats — ce qui tue le piège « 0 résultat = bug »). Le filtre isole une catégorie pour la
 cocher vite en mode Batch.
 
-Au pied de la colonne : bascule « + N traités » quand la file en contient. Poignée de
-redimensionnement à droite, révélée au survol.
+~~Au pied de la colonne : bascule « + N traités » quand la file en contient.~~ **Retirée** : le
+2026-07-20 (`afe0d0f`), elle masquait par défaut toute piste déjà analysée, donc presque toute la
+file, et devint le filtre « Non analysés uniquement » ; ce filtre de pied de colonne est parti à
+son tour le 2026-08-26 (`3c1e05e`, décision d'Antoine). Il n'y a plus de bascule au pied de la
+colonne. Poignée de redimensionnement à droite, révélée au survol.
 
 ### Zone C — surface de travail, mode Détail
 
@@ -741,7 +744,7 @@ et le plancher horodaté de 250 ms reste le garde. In-app, **jamais** `window.co
   Batch jusque-là. En mode Détail le clic droit OUVRE d'abord la ligne, comme dans Finder ou
   Mail : « Écarter » et « Changer la destination » agissent sur la zone C, donc sur la piste
   ouverte, et non sur un identifiant.
-- **Clic** sur la waveform : déplace la lecture. **Survol** : ghost fill jusqu'au curseur + ligne fine + bulle mm:ss (teinte **transitoire**, distincte du fill de lecture) — patron QuickTime + réticule spectro.
+- **Clic** sur le lecteur : déplace la lecture. **Survol** : bulle mm:ss seule — patron QuickTime. Le ghost fill et la ligne fine que cette ligne décrivait sont partis avec la waveform le 2026-08-27 (`31c5d1a`, slider fin du kit, voir le tableau du 08-27 plus haut).
 - **Clic** sur le temps : **bascule écoulé / restant** (une seule valeur affichée).
 - **Glisser** la poignée : largeur de la file, persistée.
 - **Glisser** des fichiers depuis l'OS sur la file : import. Sur le rail d'action :

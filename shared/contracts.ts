@@ -672,6 +672,13 @@ export interface DupApplyResult {
   stopped: boolean;
 }
 
+/** Événement `rekordbox:sync-progress`, émis après chaque entrée traitée d'une écriture
+ *  `master.db` par lot (`ipc_library.rs::RkbSyncProgress`, gelé par
+ *  `rkb_sync_progress_shape_matches_contracts_ts`). `done` compte dans l'appel en cours. */
+export interface RkbSyncProgress {
+  done: number;
+}
+
 /** Événement `duplicates:progress`, émis après chaque copie traitée. */
 export interface DupApplyProgress {
   done: number;
@@ -725,6 +732,9 @@ export interface PendingMasterdbRepair {
   title: string | null;
   /** The Sift app session that produced this candidate — null for pre-migration rows. */
   session_id: string | null;
+  /** `actions.track_id`, the Sift track the action moved — the context menu reveals it or finds it
+   *  in Bibliothèque (2026-11-03). Null when the action has no track. */
+  sift_track_id: number | null;
 }
 
 export interface ApplyRepairOutcome {

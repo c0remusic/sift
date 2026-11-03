@@ -26,9 +26,14 @@ Trois entrées, sélection exclusive, fond plein arrondi
 
 | Entrée | Contenu de la table | Compte |
 |---|---|---|
-| **Rangés** | Pistes converties et rangées | oui |
-| **À re-sourcer** | Écartées avec un motif récupérable | oui, ton `warning` si > 0 |
-| **Corbeille** | En attente de purge | oui, ton neutre |
+| **Rangés** | Pistes converties et rangées | ~~oui~~ non |
+| **À re-sourcer** | Écartées avec un motif récupérable | ~~oui, ton `warning` si > 0~~ non |
+| **Corbeille** | En attente de purge | ~~oui, ton neutre~~ non |
+
+⚠️ **Colonne « Compte » caduque, constaté le 2026-11-03.** Le rail ne porte le compte que là où il
+n'est écrit nulle part ailleurs (`rail.md` § Item, décision du 2026-08-26, `a927377`) : ces trois
+destinations l'écrivent déjà dans la barre unifiée (`#sift-tb-count`). Tranché par Antoine le
+2026-11-03 : la spec suit le produit.
 
 Sous ces trois entrées, la **facette active** se choisit dans la barre unifiée, pas
 dans le rail — le rail porte des *sources*, pas des filtres.
