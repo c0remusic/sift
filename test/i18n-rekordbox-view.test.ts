@@ -9,8 +9,12 @@ describe("rekordbox-view — français d'origine", () => {
   const fr = D.fr;
 
   it("rapport de synchronisation", () => {
-    expect(fr.syncReportFailed(1, 1)).toBe("1 entrée synchronisée, 1 échouée");
-    expect(fr.syncReportFailed(3, 2)).toBe("3 entrées synchronisées, 2 échouées");
+    // Rapport de la feuille (2026-11-03) : les échecs et les entrées non atteintes (Annuler) ne
+    // paraissent que s'il y en a.
+    expect(fr.syncReport(1, 1, 0)).toBe("1 entrée synchronisée · 1 échouée");
+    expect(fr.syncReport(3, 2, 2)).toBe("3 entrées synchronisées · 2 échouées · 2 non traitées — toujours en attente");
+    expect(fr.syncReport(0, 0, 1)).toBe("0 entrée synchronisée · 1 non traitée — toujours en attente");
+    expect(fr.syncStep(2, 5, "Métadonnées")).toBe("Métadonnées · 2 sur 5");
     expect(fr.syncReportOk(0)).toBe("0 entrée synchronisée — réimporte le XML dans Rekordbox si tu as réexporté.");
   });
 
@@ -34,7 +38,8 @@ describe("rekordbox-view — anglais", () => {
   const en = D.en;
 
   it("accord anglais : singulier à 1, pluriel à 0 et au-delà", () => {
-    expect(en.syncReportFailed(1, 1)).toBe("1 entry synced, 1 failed");
+    expect(en.syncReport(1, 1, 0)).toBe("1 entry synced · 1 failed");
+    expect(en.syncReport(0, 0, 3)).toBe("0 entries synced · 3 not processed — still pending");
     expect(en.syncReportOk(0)).toBe("0 entries synced — reimport the XML into Rekordbox if you re-exported.");
     expect(en.confirmSync(1)).toBe("Sync 1 entry with Rekordbox? Close Rekordbox before you continue.");
     expect(en.confirmSync(1, 2)).toBe(

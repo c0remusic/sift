@@ -40,7 +40,8 @@ import { consumeSortSuppression } from "./library-columns";
 import { refreshRootWarning } from "./rail-root-warning";
 import { registerOpenSettingsAction } from "./filing-actions";
 import { scanDoneText } from "./scan-report";
-import { goTo } from "./router";
+import { goTo, activeView } from "./router";
+import { openContextMenu } from "./context-menu";
 import { selectSettingsCategory } from "./reglages-view";
 import { onRekordboxSectionPick } from "./rekordbox-view";
 import { installWindowShortcuts } from "./shortcuts";
@@ -203,6 +204,31 @@ async function refresh() {
   await renderQueue();
 }
 
+/** Purge de la corbeille derrière la confirmation in-app. Appelée par le bouton de barre
+ *  d'Écartés ET par le clic droit sur « Corbeille » du rail : depuis le rail, l'écran affiché peut
+ *  être n'importe lequel, donc la repeinture n'a lieu que si Écartés est à l'écran — sinon
+ *  `renderEcartes` réécrirait `#content` d'un autre écran. */
+function purgeTrashConfirmed(): void {
+  void confirmAction(T().purgeConfirm, T().purgeConfirmBtn).then((ok) => {
+    if (!ok) return;
+    void purgeTrash()
+      .then((res) => {
+        // Files that resisted deletion (typically held open by another program) keep
+        // their track in the bin. Staying silent would read as "the purge worked and
+        // some tracks came back" — the one reading the user cannot act on.
+        if (res.failed.length) {
+          toast(T().purgePartial(res.purged, res.failed.length));
+        }
+        const v = activeView();
+        if (v === "trash" || v === "resourcing") return renderEcartes();
+      })
+      .catch((err) => {
+        console.error("purge failed", err);
+        toast(T().purgeFailed);
+      });
+  });
+}
+
 export function installLiveWiring() {
   registerBatchRenderer(renderBatch);
   registerRefreshHook(refresh);
@@ -310,23 +336,7 @@ export function installLiveWiring() {
         // l'écran.
         runEcarteAction(act, id);
       } else if (act === "purge") {
-        void confirmAction(T().purgeConfirm, T().purgeConfirmBtn).then((ok) => {
-          if (!ok) return;
-          void purgeTrash()
-            .then((res) => {
-              // Files that resisted deletion (typically held open by another program) keep
-              // their track in the bin. Staying silent would read as "the purge worked and
-              // some tracks came back" — the one reading the user cannot act on.
-              if (res.failed.length) {
-                toast(T().purgePartial(res.purged, res.failed.length));
-              }
-              return renderEcartes();
-            })
-            .catch((err) => {
-              console.error("purge failed", err);
-              toast(T().purgeFailed);
-            });
-        });
+        purgeTrashConfirmed();
       } else if (act === "store") {
         void openUrl(decodeURIComponent(ec.dataset.url || "")).catch((err) =>
           console.error("open_url failed", err),
@@ -528,6 +538,15 @@ export function installLiveWiring() {
   });
 
   document.addEventListener("contextmenu", (e) => {
+    // Rail, entrée « Corbeille » : Purger (`docs/ui-specs/rail.md` § Interactions). Même chemin et
+    // même confirmation armée que le bouton « Vider la corbeille » de la barre.
+    if ((e.target as HTMLElement).closest('.nv[data-view="trash"]')) {
+      e.preventDefault();
+      openContextMenu(e.clientX, e.clientY, [
+        { label: T().purgeMenu, danger: true, onPick: purgeTrashConfirmed },
+      ]);
+      return;
+    }
     // L'en-tête d'abord : il porte ses propres réglages (colonnes), pas les actions d'une piste.
     if ((e.target as HTMLElement).closest(".sift-lib-thead")) {
       e.preventDefault();

@@ -432,6 +432,7 @@ pub fn run() {
             ipc_library::rekordbox_masterdb_apply_artwork_syncs,
             ipc_library::rekordbox_masterdb_dismiss_artwork_sync,
             ipc_library::rekordbox_masterdb_resolve_ambiguous_artwork_sync,
+            ipc_library::rekordbox_masterdb_set_sync_stop,
             ipc_usb::list_removable_drives,
             ipc_usb::format_drive,
             ipc_usb::eject_drive,

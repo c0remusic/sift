@@ -1,6 +1,6 @@
 // L'écart d'une rangée Métadonnées de l'écran Rekordbox (#81) : ce qui part, et ce qui ne part pas.
 import { describe, expect, it } from "vitest";
-import { clearedCount, metadataEcartHtml } from "../frontend/rekordbox-ecart";
+import { clearedCount, metadataEcartHtml, searchMatches } from "../frontend/rekordbox-ecart";
 import { SYNC_CLEARED_FIELDS } from "../shared/contracts";
 
 const row = (over: Partial<Parameters<typeof metadataEcartHtml>[0]> = {}) => ({
@@ -48,5 +48,24 @@ describe("écart d'une synchro de métadonnées", () => {
 
   it("rien du tout : le repli « Tags »", () => {
     expect(metadataEcartHtml(row({ new_artist: null, new_title: null }))).toBe("Tags");
+  });
+});
+
+describe("recherche de l'écran Rekordbox", () => {
+  const parts = ["Fingers Inc. — Mystery Of Love", "D:/Musique/Déjà Vu.flac", null, 1986];
+  it("requête vide ou blanche : tout passe", () => {
+    expect(searchMatches("", parts)).toBe(true);
+    expect(searchMatches("   ", parts)).toBe(true);
+  });
+  it("chaque mot doit paraître, dans n'importe quel texte de la rangée", () => {
+    expect(searchMatches("fingers deja", parts)).toBe(true);
+    expect(searchMatches("fingers trax", parts)).toBe(false);
+  });
+  it("ni casse ni accents ne comptent, dans les deux sens", () => {
+    expect(searchMatches("MYSTERY", parts)).toBe(true);
+    expect(searchMatches("déjà", ["Deja Vu"])).toBe(true);
+  });
+  it("un nombre se cherche comme du texte", () => {
+    expect(searchMatches("1986", parts)).toBe(true);
   });
 });

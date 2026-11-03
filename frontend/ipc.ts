@@ -30,6 +30,7 @@ import type {
   DupScreenGroup,
   DupApplyResult,
   DupApplyProgress,
+  RkbSyncProgress,
   RekordboxLinkStatus,
   PendingMasterdbRepair,
   ApplyRepairOutcome,
@@ -512,6 +513,14 @@ export const rekordboxMasterdbScanPlaylistDuplicates = (): Promise<PlaylistDupli
  * user confirmation. */
 export const rekordboxMasterdbDedupPlaylistGroup = (group: PlaylistDuplicateGroupDto): Promise<void> =>
   invoke("rekordbox_masterdb_dedup_playlist_group", { group });
+
+/** Drapeau d'arrêt des écritures `master.db` par lot : baissé avant le premier appel d'une
+ *  synchronisation, levé par « Annuler ». Lu entre deux entrées — rien n'est défait. */
+export const rekordboxMasterdbSetSyncStop = (stop: boolean): Promise<void> =>
+  invoke("rekordbox_masterdb_set_sync_stop", { stop });
+
+export const onRekordboxSyncProgress = (cb: (p: RkbSyncProgress) => void): Promise<UnlistenFn> =>
+  listen<RkbSyncProgress>("rekordbox:sync-progress", (e) => cb(e.payload));
 
 // ---- M7 USB format utility (mirror of ipc_usb.rs) ----
 
