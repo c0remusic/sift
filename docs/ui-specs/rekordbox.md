@@ -71,6 +71,7 @@ l'action unitaire passe par le clic droit.
 |---|---|
 | **Aucun XML lié** | `emptyStateHtml` en zone C — « Aucun XML Rekordbox lié », action « Lier un fichier XML ». Le rail et la barre restent |
 | **Statut indisponible** | Carte d'erreur, bouton Réessayer. Aucune section n'est affichée comme vide |
+| **`master.db` introuvable** | XML lié mais `masterdb_error` posé : les QUATRE sections portent le message qui nomme `master.db`, compte « — » dans B′, y compris celles dont l'appel a réussi (leurs listes lisent la base de Sift, pas `master.db`). Les rangées en attente d'avant la disparition restent **masquées** : inapplicables, elles se liraient comme du travail possible (décision d'Antoine, 2026-11-03, issue #84 — règle dans `rekordbox-section.ts`). Le XML illisible garde son propre rendu |
 | **Section en erreur** | L'entrée du rail porte l'indicateur, la zone C porte la carte d'erreur et son motif. Le compte global **compte les sections tombées** — quatre cartes en erreur ne doivent jamais produire un en-tête « à jour » |
 | **Rien en attente** | Section affichée, atténuée, libellée « à jour ». Elle ne disparaît pas |
 | **Dérive détectée** | Bandeau `warning` persistant en tête de zone C : « Ferme Rekordbox, vérifie la piste, puis relie à nouveau le fichier XML. » Phrase entière, **jamais tronquée** |
