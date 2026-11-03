@@ -109,9 +109,12 @@ part. Le compte va contre le nom de la liste, à un seul endroit.
 ni de barre latérale colorée. Survol : `--overlay-hover`. Focus clavier : anneau
 `--color-border-info`.
 
-Le compte est neutre. Il prend un ton sémantique dans un seul cas : « À re-sourcer » passe en
+Le compte est neutre. ~~Il prend un ton sémantique dans un seul cas : « À re-sourcer » passe en
 `warning` quand il est supérieur à zéro, parce que c'est une file d'attente d'action, pas un
-inventaire.
+inventaire.~~ **Caduc, constaté le 2026-11-03** : la règle du 2026-08-26 ci-dessus (`a927377`)
+s'applique aussi à Rangés, À re-sourcer et Corbeille — leur barre unifiée écrit déjà leur compte
+(`#sift-tb-count`), donc le rail n'en porte aucun, et le ton `warning` n'a plus de compte où se
+poser. Tranché par Antoine le 2026-11-03 : la spec suit le produit, on ne rouvre pas l'exception.
 
 ### Section Sources — ce qui vient d'Accueil
 
@@ -172,7 +175,9 @@ glyphe accolé à un libellé — ce n'était pas ce patron.
   - Élargir aux 9 teintes de la taxonomie (§ 4) resterait conforme : demanderait de
     dériver 4 tokens `--color-hue-*-text` (blue, green, orange, gray) × 3 blocs. Écarté
     le 2026-08-20 — 5 suffisent, décision réversible.
-- **Clic droit** sur « Corbeille » : Purger (confirmation armée).
+- **Clic droit** sur « Corbeille » : Purger (confirmation armée). **Livré le 2026-11-03** : même
+  chemin que le bouton « Vider la corbeille » de la barre (`sift-live.ts::purgeTrashConfirmed`),
+  entrée en encre `danger`, sans ellipse (la confirmation ne demande aucune donnée de plus).
 - **Glisser** un dossier depuis l'OS sur la section Sources : ajout à la surveillance.
 - **Glisser** des fichiers audio sur « Revue » : import dans la file.
 

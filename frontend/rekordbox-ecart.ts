@@ -57,3 +57,15 @@ export function candidateRowHtml(
     `</div>`
   );
 }
+
+/** La recherche de la barre (spec § Zone A) : une rangée reste visible si CHAQUE mot de la requête
+ *  paraît dans l'un de ses textes — piste, valeurs de l'écart, chemin —, sans égard à la casse ni
+ *  aux accents (« deja » trouve « Déjà »). Requête vide = tout passe. Le plan de synchronisation
+ *  se borne à ce qui passe : on ne synchronise jamais une entrée qu'on ne voit pas. */
+export function searchMatches(query: string, parts: readonly (string | number | null | undefined)[]): boolean {
+  const fold = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+  const words = fold(query).split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const hay = fold(parts.filter((p) => p != null && p !== "").join(" "));
+  return words.every((w) => hay.includes(w));
+}

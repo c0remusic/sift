@@ -59,9 +59,11 @@ qui n'appartient à aucune échelle (`DESIGN.md` § 5).
 
 ### Zone D — inspecteur
 
-Détail du candidat : valeur actuelle dans Rekordbox, valeur proposée par Sift, source de
-la proposition, et l'action unitaire. En sélection multiple : compte par section et
-l'action de masse.
+**Écartée le 2026-11-03** (Antoine) — voir § Décision 2026-11-03. Prévu : détail du
+candidat (valeur actuelle dans Rekordbox, valeur proposée, source, action unitaire ; en
+sélection multiple, compte par section et action de masse). La v4 du 2026-09-08 a borné la
+zone C à `--measure-data` sans colonne d'inspecteur : un candidat se lit sur sa rangée, et
+l'action unitaire passe par le clic droit.
 
 ## États
 
@@ -189,7 +191,7 @@ en erreur, ambigus, doublons de playlist, `masterdb_error`, dérive.
   ligne `metadata` — livré le jour même (`PendingArtworkSync.artist/title`,
   `PendingMasterdbRepair.artist/title`, miroir `contracts.ts`, tests de contrat
   `pending_*_shape_matches_contracts_ts`).
-- **Inspecteur** (§ Zone D) : non fait — un candidat se lit sur sa rangée.
+- **Inspecteur** (§ Zone D) : non fait — un candidat se lit sur sa rangée. Écarté le 2026-11-03.
 - La § Zone C ci-dessus (table Case · Section · Piste · Écart · État) est **remplacée** par les
   groupes de rangées de Photos : à 200 candidats, la table de Rangés redeviendrait la bonne forme.
 
@@ -232,6 +234,50 @@ l'ancienne. Décisions d'Antoine :
   annulée est retirée, jamais ré-armée.
 - La pochette de l'ancienne release, restée en attente, est retirée quand la nouvelle n'a pas
   d'image : l'appliquer aurait poussé une image que le fichier n'a plus.
+
+## Décision — 2026-11-03 : les décisions jamais codées
+
+Un audit en lecture seule du 2026-11-03 a relevé cinq points de cette spec que
+`rekordbox-view.ts` n'avait jamais reçus. La décision du 2026-09-08 ne citait qu'« Ignorer »
+au clic droit sans retirer le reste, et le code portait un commentaire « Ignorer et rien
+d'autre — HIG, a small number of menu items ». Arbitrages d'Antoine, même jour :
+
+- **Clic droit : les quatre entrées** (§ Souris), dans cet ordre : Synchroniser cette entrée
+  (confirmation in-app, comme la barre) · Ignorer · Voir la piste dans Bibliothèque (filtre sur
+  le nom du fichier, chemin de `journal.ts`) · Ouvrir l'emplacement (`reveal_track`). Une entrée
+  impossible est **désactivée, pas retirée** (`context-menu.ts`) : une rangée ambiguë ne se
+  synchronise pas avant le choix de sa piste ; un doublon de playlist n'a ni Ignorer (rien n'est
+  persisté) ni piste Sift à montrer. Pour Ouvrir l'emplacement d'une correction de chemin,
+  `PendingMasterdbRepair` porte désormais `sift_track_id` (`actions.track_id`).
+- **Entrée** (§ Clavier) synchronise la sélection après confirmation. Ignorée dans un champ,
+  sur un bouton ou une entrée de section focalisés (leur propre activation), menu ou
+  confirmation ouverts, ou pendant une synchronisation.
+- **Recherche** (§ Zone A), `mountBarSearch`. Chaque mot doit paraître dans la piste, l'écart ou le
+  chemin, sans égard à la casse ni aux accents (`rekordbox-ecart.ts::searchMatches`). **Elle
+  borne le plan** : « Tout synchroniser (N) » et la sélection ne comptent que les rangées
+  visibles, on ne synchronise jamais ce qu'on ne voit pas. Les comptes de la colonne B′ et de la
+  tête restent ceux de la section entière. Tout masqué : « Aucune entrée ne correspond à « … » »,
+  jamais « à jour ».
+- **Synchronisation en cours** (§ États) : la feuille `.sift-batch-sheet`, en tête de zone C, dans
+  une ancre collante (`.rkb-sheet-anchor`). Elle porte une barre déterminée par entrée, l'étape
+  en texte (« Métadonnées · 2 sur 5 ») et **Annuler**. Côté Rust (validé par Antoine avant
+  écriture) : les quatre écritures `master.db` passent sur `spawn_blocking` (`hors_du_fil`,
+  gardé par `ecritures_masterdb_restent_hors_du_fil_de_la_fenetre`) ; synchrones, elles gelaient
+  la fenêtre, barre et bouton compris. Les trois écritures par lot émettent
+  `rekordbox:sync-progress` après chaque entrée. Annuler lève un drapeau
+  (`rekordbox_masterdb_set_sync_stop`) lu **entre deux entrées, jamais au milieu d'une
+  écriture** (`rekordbox_repairs.rs::apply_each`). Chaque entrée garde son backup et sa
+  relecture : ce qui est écrit le reste, le reste reste en attente et coché.
+- **Rapport** : sans échec ni arrêt, la feuille se retire et le toast d'avant parle. Sinon elle
+  devient le rapport : « N entrées synchronisées · K échouées · M non traitées — toujours en
+  attente », le détail des échecs (nom et motif), et Fermer.
+- **Inspecteur** (§ Zone D) : **écarté**, voir plus haut.
+
+**Non vérifié dans la vraie fenêtre** : une synchronisation réelle. Le dossier Pioneer est
+celui de la machine (`actions::rekordbox_pioneer_dir`), même dans une instance bac à sable : une
+synchronisation confirmée écrirait dans le vrai `master.db`. La feuille, l'arrêt et le rapport
+ont été exercés dans la vraie fenêtre, IPC Rekordbox interceptés dans la page. La progression et
+l'arrêt côté Rust sont tenus par `apply_each_s_arrete_entre_deux_entrees`.
 
 ## Hors périmètre / questions ouvertes
 

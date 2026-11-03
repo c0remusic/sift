@@ -3664,6 +3664,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    grammaire du Finder › appareil : un LIBELLÉ ALIGNÉ À DROITE (Software: / Backups:), la valeur en
    face, les actions secondaires dans la section, un filet en retrait entre les sections. */
 .rkb-main,.sift-usb-main-inner{max-width:var(--measure-data)}
+/* Ancre de la feuille de synchronisation (spec Rekordbox § États) : hauteur nulle, en tête de la
+   zone C bornée, collante pour rester en vue quand la page défile. `top` négatif du padding de
+   `.sift-rkb-main`, qui défile : un collant se pose au bord INTÉRIEUR du padding. Ce padding vaut
+   `--content-pad` (la mise en page annule celui de #content et le repose sur la colonne). */
+.rkb-sheet-anchor{position:sticky;top:calc(-1 * var(--content-pad, 0px));height:0;z-index:var(--z-sheet)}
 .rkb-head,.sift-usb-head{margin-bottom:var(--space-16)}
 .rkb-head+.sift-usage-rule,.sift-usb-head+.sift-usage-rule{margin-bottom:var(--space-16)}
 .rkb-glyph,.sift-usb-glyph{width:56px;height:56px;flex:none;display:flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);font-size:40px}
