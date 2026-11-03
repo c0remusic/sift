@@ -255,10 +255,94 @@ fn norm_tokens(s: &str) -> Vec<String> {
         .collect()
 }
 
+/// Une entrée de tracklist Discogs : le titre, et la durée quand la release la donne.
+#[derive(Debug, Clone, PartialEq)]
+struct TracklistEntry {
+    title: String,
+    duration_s: Option<f64>,
+}
+
+/// Durée d'une piste Discogs, `"6:12"` ou `"1:02:30"`, en secondes. Discogs rend `""` quand la
+/// durée n'est pas saisie — fréquent sur les vinyles : `None`, jamais `0`, sinon une piste sans
+/// durée serait pénalisée comme une piste de durée nulle.
+fn parse_discogs_duration(s: &str) -> Option<f64> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let mut total: u64 = 0;
+    for part in s.split(':') {
+        let n: u64 = part.trim().parse().ok()?;
+        total = total.checked_mul(60)?.checked_add(n)?;
+    }
+    if total == 0 {
+        return None;
+    }
+    Some(total as f64)
+}
+
+/// Le `tracklist` d'un corps `/releases/{id}`, titre et durée. Partie PURE de `fetch_tracklist`.
+fn parse_tracklist(v: &Value) -> Vec<TracklistEntry> {
+    v.get("tracklist")
+        .and_then(|x| x.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|t| {
+                    let title = t.get("title").and_then(|x| x.as_str())?;
+                    let duration_s = t
+                        .get("duration")
+                        .and_then(|x| x.as_str())
+                        .and_then(parse_discogs_duration);
+                    Some(TracklistEntry {
+                        title: title.to_string(),
+                        duration_s,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Écart en deçà duquel deux durées désignent le même enregistrement : un rip de vinyle ou un
+/// encodage décale de quelques secondes (silence de tête, fin de sillon), pas davantage.
+const DURATION_SAME_S: f64 = 3.0;
+/// Écart au-delà duquel ce n'est plus le même mix : un radio edit, une version longue.
+const DURATION_OTHER_S: f64 = 15.0;
+/// Poids de la durée au score de tracklist, en plus et en moins. Valeurs du design T5 (§ 7).
+const DURATION_WEIGHT: i32 = 3;
+
+/// Contribution de la durée au score d'une entrée de tracklist. Nulle dès qu'une des deux durées
+/// manque : l'absence ne départage rien, elle ne doit ni aider ni nuire.
+fn duration_score(track_s: Option<f64>, target_s: Option<f64>) -> i32 {
+    let (Some(a), Some(b)) = (track_s, target_s) else {
+        return 0;
+    };
+    if !(a.is_finite() && b.is_finite() && a > 0.0 && b > 0.0) {
+        return 0;
+    }
+    let gap = (a - b).abs();
+    if gap <= DURATION_SAME_S {
+        DURATION_WEIGHT
+    } else if gap > DURATION_OTHER_S {
+        -DURATION_WEIGHT
+    } else {
+        0
+    }
+}
+
 /// How well a Discogs tracklist title matches the track we want. The version (remix/dub)
 /// tokens are weighted heavily — they're what distinguishes one mix from another, so a
 /// tracklist entry that actually contains the mix name wins decisively over a plain title.
-fn track_match_score(track_title: &str, target_title: &str, target_version: Option<&str>) -> i32 {
+///
+/// La durée (T5) départage deux mixes que les mots confondent, mais seulement APRÈS le portail
+/// des mots distinctifs : une durée égale ne fait jamais d'une piste sans rapport un candidat.
+fn track_match_score(
+    track_title: &str,
+    track_duration_s: Option<f64>,
+    target_title: &str,
+    target_version: Option<&str>,
+    target_duration_s: Option<f64>,
+) -> i32 {
     let track: HashSet<String> = norm_tokens(track_title).into_iter().collect();
 
     // Everything the caller actually asked for (title + version) — used to tell wanted version
@@ -312,7 +396,7 @@ fn track_match_score(track_title: &str, target_title: &str, target_version: Opti
             score -= 2;
         }
     }
-    score
+    score + duration_score(track_duration_s, target_duration_s)
 }
 
 /// Tokens that mark an alternate take (remix, dub, edit…) or a stripped DJ tool (beats, tool,
@@ -347,18 +431,25 @@ fn is_version_keyword(t: &str) -> bool {
 /// track title when the score is positive. Used to (a) rank the release and (b) replace the
 /// release/EP title Discogs returns in search results with the actual TRACK title.
 fn best_track_match(
-    titles: &[String],
+    tracks: &[TracklistEntry],
     target_title: &str,
     target_version: Option<&str>,
+    target_duration_s: Option<f64>,
 ) -> (i32, Option<String>) {
     // Keep the FIRST maximum on ties (replace only on a strictly higher score). Discogs lists the
     // original/main mix first, so when several mixes tie this prefers it over a later alternate —
     // far better than max_by_key's last-wins, which forced an arbitrary mix.
     let mut best: Option<(i32, &String)> = None;
-    for t in titles {
-        let s = track_match_score(t, target_title, target_version);
+    for t in tracks {
+        let s = track_match_score(
+            &t.title,
+            t.duration_s,
+            target_title,
+            target_version,
+            target_duration_s,
+        );
         if best.map_or(true, |(bs, _)| s > bs) {
-            best = Some((s, t));
+            best = Some((s, &t.title));
         }
     }
     match best {
@@ -489,9 +580,9 @@ impl Discogs {
                 continue;
             }
             match self.fetch_tracklist(&cands[i].release_id) {
-                Ok(titles) => {
+                Ok(tracks) => {
                     let (score, matched) =
-                        best_track_match(&titles, &q.title, q.version.as_deref());
+                        best_track_match(&tracks, &q.title, q.version.as_deref(), q.duration_s);
                     scores[i] = score;
                     // Discogs search returns the RELEASE title ("Artist - Space EP"); replace it
                     // with the actual matching track title so we identify the track, not the EP.
@@ -510,9 +601,10 @@ impl Discogs {
         scores
     }
 
-    /// Fetch a release's tracklist titles. Best-effort: the caller treats Err as "no tracklist"
-    /// and simply doesn't refine that candidate (so a rate-limit on a detail call is non-fatal).
-    fn fetch_tracklist(&self, release_id: &str) -> Result<Vec<String>, ProviderError> {
+    /// Fetch a release's tracklist (titles and durations). Best-effort: the caller treats Err as
+    /// "no tracklist" and simply doesn't refine that candidate (so a rate-limit on a detail call is
+    /// non-fatal).
+    fn fetch_tracklist(&self, release_id: &str) -> Result<Vec<TracklistEntry>, ProviderError> {
         let url = format!("https://api.discogs.com/releases/{release_id}");
         let mut resp = ureq::get(&url)
             .config()
@@ -528,17 +620,7 @@ impl Discogs {
             .limit(JSON_BODY_LIMIT)
             .read_json()
             .map_err(|e| ProviderError::Parse(e.to_string()))?;
-        let titles = v
-            .get("tracklist")
-            .and_then(|x| x.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|t| t.get("title").and_then(|x| x.as_str()))
-                    .map(|s| s.to_string())
-                    .collect()
-            })
-            .unwrap_or_default();
-        Ok(titles)
+        Ok(parse_tracklist(&v))
     }
 }
 
@@ -642,6 +724,7 @@ mod tests {
             artist: artist.into(),
             title: title.into(),
             version: None,
+            duration_s: None,
             attempts: attempts.iter().map(|s| s.to_string()).collect(),
         }
     }
@@ -799,13 +882,19 @@ mod tests {
     #[test]
     fn version_words_alone_never_make_a_match() {
         let (score, title) = best_track_match(
-            &["Cherry Bomb (Original Mix)".into()],
+            &tl(&["Cherry Bomb (Original Mix)".into()]),
             "Elastic",
             Some("Original-Mix"),
+            None,
         );
         assert!(score <= 0, "score {score}");
         assert_eq!(title, None);
-        let (score, title) = best_track_match(&["Elastic".into()], "Elastic", Some("Original-Mix"));
+        let (score, title) = best_track_match(
+            &tl(&["Elastic".into()]),
+            "Elastic",
+            Some("Original-Mix"),
+            None,
+        );
         assert!(score > 0);
         assert_eq!(title.as_deref(), Some("Elastic"));
     }
@@ -888,9 +977,9 @@ mod tests {
     fn track_score_prefers_the_matching_mix() {
         let target_t = "Sean";
         let ver = Some("Eric's 2WFU Dub");
-        let dub = track_match_score("Sean (Eric's 2WFU Dub)", target_t, ver);
-        let plain = track_match_score("Sean", target_t, ver);
-        let other = track_match_score("Sean (Radio Edit)", target_t, ver);
+        let dub = track_match_score("Sean (Eric's 2WFU Dub)", None, target_t, ver, None);
+        let plain = track_match_score("Sean", None, target_t, ver, None);
+        let other = track_match_score("Sean (Radio Edit)", None, target_t, ver, None);
         assert!(
             dub > plain,
             "the exact dub ({dub}) beats the plain title ({plain})"
@@ -962,7 +1051,7 @@ mod tests {
     #[test]
     fn best_track_match_picks_the_track_not_the_ep() {
         let titles = vec!["Intro".to_string(), "Sean".to_string(), "Outro".to_string()];
-        let (score, title) = best_track_match(&titles, "Sean", None);
+        let (score, title) = best_track_match(&tl(&titles), "Sean", None, None);
         assert!(score > 0);
         assert_eq!(title.as_deref(), Some("Sean"));
     }
@@ -973,7 +1062,12 @@ mod tests {
             "Love Foolosophy".to_string(),
             "Love Foolosophy (Knee Deep Remix)".to_string(),
         ];
-        let (_score, title) = best_track_match(&titles, "Love Foolosophy", Some("Knee Deep Remix"));
+        let (_score, title) = best_track_match(
+            &tl(&titles),
+            "Love Foolosophy",
+            Some("Knee Deep Remix"),
+            None,
+        );
         assert_eq!(title.as_deref(), Some("Love Foolosophy (Knee Deep Remix)"));
     }
 
@@ -990,7 +1084,7 @@ mod tests {
             "Falling Up (Extended Mix)".to_string(),
             "Falling Up (Club Mix)".to_string(),
         ];
-        let (_score, title) = best_track_match(&titles, "Falling Up (Club Mix)", None);
+        let (_score, title) = best_track_match(&tl(&titles), "Falling Up (Club Mix)", None, None);
         assert_eq!(title.as_deref(), Some("Falling Up (Club Mix)"));
     }
 
@@ -1001,7 +1095,7 @@ mod tests {
             "Love Foolosophy (Knee Deep Remix)".to_string(),
             "Love Foolosophy".to_string(),
         ];
-        let (_score, title) = best_track_match(&titles, "Love Foolosophy", None);
+        let (_score, title) = best_track_match(&tl(&titles), "Love Foolosophy", None, None);
         assert_eq!(title.as_deref(), Some("Love Foolosophy"));
     }
 
@@ -1014,7 +1108,7 @@ mod tests {
             "Fool For Love (Beats)".to_string(),
             "Fool For Love (Dub)".to_string(),
         ];
-        let (_score, title) = best_track_match(&titles, "Fool For Love", None);
+        let (_score, title) = best_track_match(&tl(&titles), "Fool For Love", None, None);
         assert_eq!(title.as_deref(), Some("Fool For Love (Vocal Mix)"));
     }
 
@@ -1025,15 +1119,142 @@ mod tests {
             "Track (Club Mix)".to_string(),
             "Track (Extended Mix)".to_string(),
         ];
-        let (_score, title) = best_track_match(&titles, "Track", None);
+        let (_score, title) = best_track_match(&tl(&titles), "Track", None, None);
         assert_eq!(title.as_deref(), Some("Track (Club Mix)"));
     }
 
     #[test]
     fn best_track_match_none_when_nothing_matches() {
         let titles = vec!["Completely".to_string(), "Unrelated".to_string()];
-        let (_score, title) = best_track_match(&titles, "Sean", Some("Dub"));
+        let (_score, title) = best_track_match(&tl(&titles), "Sean", Some("Dub"), None);
         assert_eq!(title, None);
+    }
+
+    /// Tracklist sans durées, comme rendue par `fetch_tracklist` avant T5.
+    fn tl(titles: &[String]) -> Vec<TracklistEntry> {
+        titles
+            .iter()
+            .map(|t| TracklistEntry {
+                title: t.clone(),
+                duration_s: None,
+            })
+            .collect()
+    }
+
+    /// Tracklist à durées Discogs (`"m:ss"`, `""` = non saisie), passée par le VRAI analyseur.
+    fn tl_timed(tracks: &[(&str, &str)]) -> Vec<TracklistEntry> {
+        let body = serde_json::json!({
+            "tracklist": tracks
+                .iter()
+                .map(|(t, d)| serde_json::json!({ "type_": "track", "title": t, "duration": d }))
+                .collect::<Vec<_>>()
+        });
+        parse_tracklist(&body)
+    }
+
+    #[test]
+    fn discogs_durations_parse_to_seconds_and_blank_is_unknown() {
+        assert_eq!(parse_discogs_duration("6:12"), Some(372.0));
+        assert_eq!(parse_discogs_duration("1:02:30"), Some(3750.0));
+        assert_eq!(parse_discogs_duration(" 0:45 "), Some(45.0));
+        // Discogs rend "" quand la durée n'est pas saisie : inconnue, pas nulle.
+        assert_eq!(parse_discogs_duration(""), None);
+        assert_eq!(parse_discogs_duration("0:00"), None);
+        assert_eq!(parse_discogs_duration("6'12"), None);
+        assert_eq!(parse_discogs_duration("6:xx"), None);
+    }
+
+    #[test]
+    fn parse_tracklist_keeps_titles_and_reads_durations() {
+        let t = tl_timed(&[("Falling Up (Club Mix)", "7:41"), ("Falling Up (Dub)", "")]);
+        assert_eq!(
+            t,
+            vec![
+                TracklistEntry {
+                    title: "Falling Up (Club Mix)".into(),
+                    duration_s: Some(461.0),
+                },
+                TracklistEntry {
+                    title: "Falling Up (Dub)".into(),
+                    duration_s: None,
+                },
+            ]
+        );
+    }
+
+    /// T5, le cas que les mots ne savent pas trancher : deux mixes sans version demandée et sans
+    /// mot pénalisé, à égalité — avant T5 le PREMIER gagnait toujours
+    /// (`best_track_match_keeps_first_when_scores_tie`). La durée de la piste locale désigne le
+    /// second.
+    #[test]
+    fn duration_picks_the_mix_the_words_tie_on() {
+        let tracks = tl_timed(&[
+            ("Track (Club Mix)", "7:41"),
+            ("Track (Extended Mix)", "9:02"),
+        ]);
+        let (_s, title) = best_track_match(&tracks, "Track", None, Some(541.4));
+        assert_eq!(title.as_deref(), Some("Track (Extended Mix)"));
+        // Témoin : sans durée locale, le comportement d'avant T5 tient — le premier.
+        let (_s, title) = best_track_match(&tracks, "Track", None, None);
+        assert_eq!(title.as_deref(), Some("Track (Club Mix)"));
+    }
+
+    /// Un fichier sans version dans le nom, sur un 12" qui porte l'original ET un remix : la
+    /// pénalité du remix (−2) gagnait déjà. Quand la durée locale est celle du remix, elle doit
+    /// renverser ce choix — c'est le fichier qui dit quel enregistrement il est.
+    #[test]
+    fn duration_overrides_the_original_preference_when_it_points_at_the_remix() {
+        let tracks = tl_timed(&[
+            ("Love Foolosophy", "3:47"),
+            ("Love Foolosophy (Knee Deep Remix)", "8:23"),
+        ]);
+        let (_s, title) = best_track_match(&tracks, "Love Foolosophy", None, Some(503.0));
+        assert_eq!(title.as_deref(), Some("Love Foolosophy (Knee Deep Remix)"));
+        let (_s, title) = best_track_match(&tracks, "Love Foolosophy", None, Some(227.5));
+        assert_eq!(title.as_deref(), Some("Love Foolosophy"));
+    }
+
+    /// La durée ne passe qu'APRÈS le portail des mots distinctifs : une piste sans rapport de
+    /// durée identique reste hors jeu (même raisonnement que l'issue #66 pour les mots de version).
+    #[test]
+    fn equal_duration_alone_never_makes_a_match() {
+        let tracks = tl_timed(&[("Completely Unrelated", "6:12")]);
+        let (score, title) = best_track_match(&tracks, "Sean", None, Some(372.0));
+        assert!(score <= 0, "score {score}");
+        assert_eq!(title, None);
+    }
+
+    /// Les trois paliers du design § 7, bornes comprises, et la neutralité d'une durée absente.
+    #[test]
+    fn duration_score_bands() {
+        assert_eq!(
+            duration_score(Some(372.0), Some(375.0)),
+            3,
+            "3 s : même piste"
+        );
+        assert_eq!(
+            duration_score(Some(372.0), Some(375.1)),
+            0,
+            "au-delà de 3 s"
+        );
+        assert_eq!(
+            duration_score(Some(372.0), Some(387.0)),
+            0,
+            "15 s : zone neutre"
+        );
+        assert_eq!(
+            duration_score(Some(372.0), Some(387.1)),
+            -3,
+            "au-delà de 15 s"
+        );
+        assert_eq!(duration_score(None, Some(372.0)), 0);
+        assert_eq!(duration_score(Some(372.0), None), 0);
+        assert_eq!(
+            duration_score(Some(372.0), Some(0.0)),
+            0,
+            "durée locale nulle"
+        );
+        assert_eq!(duration_score(Some(372.0), Some(f64::NAN)), 0);
     }
 
     /// Un jeton vide se refuse SANS toucher au réseau.
