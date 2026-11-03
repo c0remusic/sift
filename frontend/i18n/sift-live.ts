@@ -18,6 +18,7 @@ const fr = {
   searchCopied: "Recherche copiée",
   purgeConfirm: "Purger définitivement la corbeille ? Cette action est irréversible.",
   purgeConfirmBtn: "Purger",
+  purgeMenu: "Purger",
   purgePartial: (purged: number, failed: number) => {
     const pl = failed > 1 ? "s" : "";
     return `${purged} supprimé${purged > 1 ? "s" : ""} — ${failed} fichier${pl} impossible${pl} à supprimer (ouvert dans un autre programme ?)`;
@@ -44,6 +45,7 @@ const en: typeof fr = {
   searchCopied: "Search copied",
   purgeConfirm: "Permanently empty Trash? This can't be undone.",
   purgeConfirmBtn: "Empty trash",
+  purgeMenu: "Empty Trash",
   purgePartial: (purged, failed) =>
     `${purged} deleted — couldn't delete ${failed} file${s(failed)} (open in another program?)`,
   purgeFailed: "Failed: couldn't empty Trash",
