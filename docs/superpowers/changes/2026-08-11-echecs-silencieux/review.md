@@ -141,10 +141,13 @@ déchiffrement, ou le mettre en cache) et n'a pas été tranché ici.
 - **Les 7 vérifications sur profil vierge** listées par #15 restent écartées (décision du
   2026-08-11, inchangée) : elles demandent de déplacer la vraie base de l'utilisateur, et aucun
   correctif de ce document ne les attendait.
-- **La vérification dans la vraie fenêtre.** C'est le trou principal de cette session. Le protocole
-  est le skill `run-sift` ; les états à voir sont listés ci-dessous.
+- **La vérification dans la vraie fenêtre.** C'était le trou principal de cette session. Elle a été
+  faite le 2026-11-03 : voir « Vérification visuelle — exécutée le 2026-11-03 » plus bas. Elle a
+  ouvert trois défauts ([#84](https://github.com/c0remusic/sift/issues/84),
+  [#85](https://github.com/c0remusic/sift/issues/85),
+  [#86](https://github.com/c0remusic/sift/issues/86)).
 
-## Protocole de vérification visuelle — à exécuter, pas encore fait
+## Protocole de vérification visuelle — tel qu'écrit le 2026-08-17
 
 Chaque ligne demande de PROVOQUER l'échec, ce qu'aucun parcours normal ne fait. Par ordre de coût :
 
@@ -160,6 +163,77 @@ Chaque ligne demande de PROVOQUER l'échec, ce qu'aucun parcours normal ne fait.
 5. **A2** — renommer le binaire `ffmpeg` du bundle, puis Ranger : le message doit nommer FFmpeg et
    ne plus dire « Réessaie ».
 6. **A17/A18** — le plus coûteux, demande une base illisible. À faire sur une COPIE.
+
+## Vérification visuelle — exécutée le 2026-11-03
+
+Session de vérification, sur le code de `main` à `11888f1`. Rien n'a été corrigé dans le code :
+les trois défauts trouvés sont ticketés (voir le verdict de chaque cas), pour les raisons dites
+dans chaque issue.
+
+### Montage
+
+- **Instance bac à sable** : `npm run tauri dev -- --config <json>` depuis un worktree, `identifier`
+  `com.sift.app.echecsverif` (donc mutex, `%APPDATA%` et base séparés de la vraie
+  `com.sift.app`), Vite sur 5291, CDP sur 9491, `CARGO_INCREMENTAL=0`. Identité vérifiée avant
+  toute mesure : `document.title` = `Sift — prépa sons DJ`, url sur `localhost:5291`, base
+  `com.sift.app.echecsverif\sift.db` créée par ce lancement, `sift.exe` dont l'`ExecutablePath`
+  est dans le worktree. Le client CDP refusait toute cible hors de ces deux critères.
+- **Données fabriquées** : trois FLAC de 40 s générés par le FFmpeg bundlé (sinus, fondu de sortie,
+  tags artiste/titre), dans un dossier scratch ; racine de bibliothèque sur un second dossier
+  scratch.
+- **Incident à connaître.** À 03:53:35, 90 s après le lancement, la base du bac à sable contenait
+  une source `C:\Users\LEETJ\Documents\Soulseek Downloads\complete` (2690 pistes, analyse en
+  cours) et `library_root` réglé sur ce même dossier. Ni ce protocole ni aucun script de la session
+  ne les avait posés — la fenêtre bac à sable est visible, quelqu'un a pu la prendre pour l'app.
+  Avant tout test, la source a été retirée (`sources::remove` ne fait qu'un `DELETE` en base) et la
+  racine remise sur le dossier scratch : un « Convertir » dans le bac à sable aurait sinon déplacé
+  de vrais fichiers. En fin de session la table `actions` du bac à sable est vide (`count(*)` = 0) :
+  aucun rangement, ni de la session ni de l'incident, n'a été journalisé.
+- **Captures** : hors dépôt, dans le dossier de notes partagé de la session parente
+  (`%APPDATA%\Claude\side-session-notes\local_0ca29454-…\echecs-silencieux-captures\`). Elles ne
+  sont pas versionnées parce qu'elles montrent des chemins `C:\Users\LEETJ\…` et que le dépôt est
+  public. Aucune ne montre la carte mémoire `H:` (la première capture, prise sur Clé USB, a été
+  supprimée et refaite sur Revue).
+
+### Résultats
+
+| Cas | Échec provoqué | Ce que l'app montre | Capture | Verdict |
+|---|---|---|---|---|
+| **A4** | Dossier surveillé ajouté, puis supprimé du disque ; « Rescanner » par le menu contextuel du rail | Ligne du rail rouge (`sift-rail-src--error`), infobulle « dossier inaccessible » ; toast « Le scan du dossier surveillé a échoué : dossier introuvable — disque débranché ou dossier déplacé : <chemin> » | `a4-scan-en-echec.png` | **Tenu** |
+| **A5** | `library_root` vidé, dossier déposé sur `#filbox-settings` (événement `tauri://drag-drop` émis avec la position du centre de la zone, `dropModeAt` → `dest` vérifié) | Toast « Aucune racine de bibliothèque n'est réglée — un dossier déposé ici ne peut pas devenir une destination. Choisis-la dans Réglages. » | `a5-depot-sans-racine.png` | **Tenu** |
+| **A9** | Jeton vide, « Identifier » | « L'identification Discogs demande un jeton — sans lui, Sift n'interroge pas Discogs du tout… » + lien « Ouvrir Réglages » | `a9-identifier-sans-jeton.png` | **Tenu** |
+| **A10** | Jeton bidon saisi dans Réglages (vrai appel réseau, Discogs a répondu 401) : « Vérifier », puis « Ré-identifier » en Revue | Les deux surfaces : « Discogs a refusé le jeton — il est invalide, expiré ou révoqué. Ce n'est pas la connexion : réessayer ne changera rien. », en couleur danger, jamais « injoignable » | `a10-reglages-verifier.png`, `a10-identifier-jeton-refuse.png` | **Tenu** |
+| **A2** | Binaire bundlé et sidecar `target\debug\ffmpeg.exe` renommés (après que `ffmpeg::chemin` avait figé le chemin bundlé : `ffmpeg_version` passe de la version à « Le fichier spécifié est introuvable »), puis « Convertir » | Toast « Conversion échouée — … FFmpeg est introuvable — Sift ne peut convertir aucun fichier tant qu'il manque. Réinstaller l'app le rétablit. » ; même cause en infobulle du marqueur de rangée ; plus aucun « Réessaie » | `a2-ffmpeg-absent.png` | **Tenu, deux défauts voisins** : le bandeau persistant dit « Conversion échouée » sans cause et affiche le chemin d'un fichier jamais créé ([#85](https://github.com/c0remusic/sift/issues/85)) ; le marqueur réduit le nom de la piste à « L » dans la file ([#86](https://github.com/c0remusic/sift/issues/86)) |
+| **A17/A18** | Table `actions` renommée dans la base du bac à sable pendant que l'app tourne, puis Journal | Carte « Impossible de lire le journal. Vérifie la connexion à la base et réessaie. » + « Réessayer » — pas « Rien dans cette session ». Table rétablie, « Réessayer » rend l'écran normal | `a17-a18-journal-illisible.png` ; témoin sain avant casse : `a17-a18-temoin-journal-sain.png` | **Tenu** |
+| **A13/A14/A15** | Voir la note ci-dessous : réponses substituées dans la page, pas de dossier renommé | Tête « synchronisation indisponible » ; ligne `master.db :` qui nomme le fichier manquant ; section Playlists « master.db introuvable (…) — la synchronisation Rekordbox reste indisponible tant qu'il manque » ; boutons de synchro désactivés. **Mais** Fichiers, Métadonnées et Pochettes affichent « 0 » et leurs sections sont absentes | `a13-a15-rekordbox-sans-masterdb.png` | **A14 et A15 tenus. A13 partiel** ([#84](https://github.com/c0remusic/sift/issues/84)) : trois catégories sur quatre disent « rien en attente » quand rien ne peut être détecté |
+
+### A13 : ce qui a été exercé, et ce qui ne l'a pas été
+
+Le protocole demandait de renommer `Pioneer/rekordbox`. Sur cette machine ce dossier est le
+**vrai**, avec le vrai `master.db` d'Antoine (`dirs::config_dir()` passe par
+`SHGetKnownFolderPath`, aucune variable d'environnement ne le détourne) : il n'a pas été touché.
+
+À la place, dans la page du bac à sable seulement, `window.fetch` a été intercepté sur le
+transport IPC (`__TAURI_INTERNALS__.invoke` est non réinscriptible) pour deux commandes :
+`rekordbox_status` rendait `linked: true` et le `masterdb_error` exact de
+`ipc_library.rs::masterdb_error` (branche « absent »), et `rekordbox_masterdb_scan_playlist_duplicates`
+échouait avec le texte exact de `rekordbox_repairs.rs::resolve_pioneer_dir` (dossier absent). Les
+trois listes d'attente passaient par le vrai backend, qui lit la base de Sift et non `master.db` —
+c'est précisément ce qui fait le défaut #84 : dans le vrai scénario, ces trois appels réussissent et
+rendent `[]`.
+
+Ce qui reste donc NON exercé dans une vraie fenêtre : le calcul de `masterdb_error` par le backend
+sur un dossier réellement absent. Il est tenu par le test
+`ipc_library::masterdb_error_distinguishes_a_missing_master_db_from_a_present_one` (non relancé dans
+cette session).
+
+### Observation non vérifiée
+
+En retirant par IPC la source posée par l'incident, la piste qui était ouverte en Revue est restée
+affichée avec « unknown track path » (chaîne anglaise brute du backend) et une puce
+« LECTURE INCOMPLÈTE ». Le retrait était un appel IPC direct, pas le « Retirer » du rail : rien ne dit
+que le chemin réel de l'interface produit le même écran. Non ticketé pour cette raison ; à rejouer
+par le menu du rail avant d'en faire un défaut.
 
 ## Gates passées
 
