@@ -25,6 +25,7 @@ import { isBatchSheetOpen } from "./batch-sheet";
 import { anchoredBelowPosition } from "./popover-position";
 import { queueCountLabel } from "./queue-count-label";
 import { verdictDot } from "./queue-verdict-dot";
+import { queueSubHtml } from "./queue-row-sub";
 import { numLocale } from "./i18n";
 import { conversionFailureText } from "./conversion-error";
 import { belowClubBitrate } from "./rails";
@@ -183,10 +184,12 @@ function measureQueueRowHeight(ql: HTMLElement): number {
   probe.innerHTML =
     `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
     `<div style="display:flex;align-items:center;gap:var(--space-6);min-width:0"><span style="flex:1">probe</span></div>` +
-    // MÊME classe que la vraie seconde ligne de `queueRowHtml` — et non une copie de ses styles.
-    // Une sonde qui n'hérite pas exactement des mêmes interlignes mesure une autre rangée que
-    // celle qui sera peinte, et la virtualisation se décale sans que rien ne le dise (issue #45).
-    `<div class="qi-sub">&nbsp;</div></div>`;
+    // MÊME rendu que la vraie seconde ligne de `queueRowHtml` (`queueSubHtml`, depuis #86) — et non
+    // une copie de ses styles. Une sonde qui n'hérite pas exactement des mêmes interlignes mesure une
+    // autre rangée que celle qui sera peinte, et la virtualisation se décale sans que rien ne le
+    // dise (issue #45).
+    queueSubHtml("", null) +
+    `</div>`;
   ql.appendChild(probe);
   const h = probe.getBoundingClientRect().height;
   probe.remove();
@@ -774,7 +777,6 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
   // is re-read from filing-state on every paint, so leaving Revue and coming back keeps it.
   const failure = filingFailure(it.id);
   const title = esc(it.filename || it.path);
-  const artist = it.artist ? esc(it.artist) : "";
   const L = T();
   return (
     `<div class="qi${active ? " cur" : ""}${onCursor ? " qi-kbd" : ""}" id="qi-${it.id}" role="option" aria-selected="${active}" data-id="${it.id}" data-path="${esc(it.path)}" title="${reviewMode === "batch" ? L.rowTitleBatch : L.rowTitle}" style="cursor:pointer">` +
@@ -793,14 +795,12 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
     // Always render the second line (never conditionally omit it) — otherwise a
     // not-yet-identified track (no artist) renders one line shorter than an identified
     // one, making queue rows visibly uneven heights next to each other.
-    `<div class="qi-sub">${artist || "&nbsp;"}</div>` +
-    `</div>` +
     // L'échec de CONVERSION garde son libellé, et il est le seul : ce n'est pas un verdict, la
     // pastille ne le porte pas, et c'est un fait de fond que l'utilisateur doit voir sans survoler.
-    // Le mot de VERDICT, lui, est parti le 2026-08-26 — il doublait la pastille (voir `verdictDot`).
-    (failure
-      ? `<span title="${esc(conversionFailureText(failure) ?? failure)}" style="flex:none;display:inline-flex;align-items:center;gap:var(--space-4);font-size:var(--text-xs);color:var(--color-text-warning)"><i class="ti ti-alert-triangle"></i>${L.conversionFailed}</span>`
-      : "") +
+    // Il vit sur cette seconde ligne depuis #86 (`queue-row-sub.ts`) : au bord droit, il écrasait le
+    // nom du fichier. Le mot de VERDICT, lui, est parti le 2026-08-26 (voir `verdictDot`).
+    queueSubHtml(it.artist ?? "", failure ? (conversionFailureText(failure) ?? failure) : null) +
+    `</div>` +
     // Pastille DUPLICATE, au BORD DROIT de la ligne (wireframe « Poste de décision » §§ 09-10 ;
     // spec `docs/ui-specs/revue.md` § Zone B′ : « rendu hors colonne verdict »). Elle a quitté la
     // première ligne — où elle était collée au nom de fichier sous forme de glyphe nu ⧉ teinté

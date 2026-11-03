@@ -15,6 +15,7 @@ import { readFileSync } from "node:fs";
 
 const CSS = readFileSync("frontend/styles.css", "utf8");
 const PANEL = readFileSync("frontend/queue-panel.ts", "utf8");
+const SUB = readFileSync("frontend/queue-row-sub.ts", "utf8");
 
 /** Le corps de la règle CSS portant exactement ce sélecteur, en tête de son bloc de déclarations. */
 function regle(selecteur: string): string {
@@ -48,11 +49,15 @@ describe("hauteur de rangée de file (#45)", () => {
   // styles au lieu de partager la classe, elle mesurerait une rangée qui n'existe pas — et le
   // décalage serait invisible, puisque la sonde comme le rendu resteraient « corrects » chacun de
   // leur côté.
-  it("fait partager la MÊME classe à la rangée peinte et à la sonde qui la mesure", () => {
-    const occurrences = PANEL.match(/class="qi-sub"/g) ?? [];
-    expect(occurrences.length).toBe(2);
+  // Depuis #86, la seconde ligne vient d'UNE fonction (`queue-row-sub.ts`) : la rangée et la sonde
+  // l'appellent toutes deux, et aucune n'écrit plus la classe à la main.
+  it("fait partager le MÊME rendu à la rangée peinte et à la sonde qui la mesure", () => {
+    expect(PANEL).not.toMatch(/class="qi-sub"/);
     const sonde = PANEL.slice(PANEL.indexOf("function measureQueueRowHeight"));
-    expect(sonde.slice(0, 1200)).toMatch(/class="qi-sub"/);
+    expect(sonde.slice(0, 1200)).toMatch(/queueSubHtml\(/);
+    const rangee = PANEL.slice(PANEL.indexOf("function queueRowHtml"));
+    expect(rangee.slice(0, 3000)).toMatch(/queueSubHtml\(/);
+    expect(SUB).toMatch(/class="qi-sub"/);
   });
 
   it("garde la seconde ligne hors des styles inline, où la sonde ne la verrait pas", () => {
