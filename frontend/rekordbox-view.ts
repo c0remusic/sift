@@ -56,6 +56,7 @@ import { openContextMenu, type MenuItem } from "./context-menu";
 import { planSync, type RkbSection, type SyncPlan } from "./rekordbox-plan";
 import { T } from "./i18n/rekordbox-view";
 import { candidateRowHtml, clearedCount, metadataEcartHtml, searchMatches } from "./rekordbox-ecart";
+import { sectionView } from "./rekordbox-section";
 import { bibState } from "./bibliotheque-view";
 import { humanizeError } from "./errors";
 
@@ -458,51 +459,66 @@ export async function renderRekordboxLive(): Promise<void> {
  *  chaque relevé, et à chaque frappe dans la recherche de la barre. */
 function paintRekordbox(content: HTMLElement, status: RekordboxLinkStatus): void {
   const L = T();
+  // En-tête « Fichiers (—) », jamais « (0) » : une section qui n'a rien pu dire n'a pas zéro
+  // rangée, elle a un compte inconnu — même « — » que la colonne B′ (#84).
   const failedHtml = (id: string, label: string) =>
-    `<div id="${id}">${groupHeadHtml(label, 0, 0)}${sectionErrorHtml()}</div>`;
+    `<div id="${id}"><div class="rkb-group-hd">${esc(label)} (—)</div>${sectionErrorHtml()}</div>`;
+  // #84 : sans `master.db`, aucune section ne peut rien détecter, même celles dont l'appel a réussi
+  // (elles lisent la base de Sift). Chacune dit alors pourquoi (`sectionView`), sans compte ni
+  // rangées d'avant. Borné à `masterdb_error` : le XML illisible garde son rendu, non tranché ici.
+  const unavailable = status.masterdb_error != null;
+  const view = (rows: unknown[] | null, count: number) => sectionView({ callFailed: !rows, unavailable, count });
   // Une section tombée n'a rien en attente : le plan ne doit pas viser ses rangées d'avant.
-  if (!fetched.repairs) lastPendingRepairs = [];
-  if (!fetched.metas) lastPendingMetadataSyncs = [];
-  if (!fetched.arts) lastPendingArtworkSyncs = [];
-  if (!fetched.dedups) lastVisibleDedups = [];
+  if (!fetched.repairs || unavailable) lastPendingRepairs = [];
+  if (!fetched.metas || unavailable) lastPendingMetadataSyncs = [];
+  if (!fetched.arts || unavailable) lastPendingArtworkSyncs = [];
+  if (!fetched.dedups || unavailable) lastVisibleDedups = [];
   const pendingOf = (rows: { status: string }[] | null) => (rows ?? []).filter((r) => r.status === "pending").length;
+  const vFiles = view(fetched.repairs, pendingOf(fetched.repairs));
+  const vMeta = view(fetched.metas, pendingOf(fetched.metas));
+  const vArt = view(fetched.arts, pendingOf(fetched.arts));
+  const vDedup = view(fetched.dedups, fetched.dedups?.length ?? 0);
 
   // Colonne B′ — la sidebar d'Utilitaire de disque, au plan de la file de Revue. QUATRE entrées
   // plus « Tout » : une section dont l'appel a échoué GARDE son entrée, compte remplacé par « — »
   // (une section absente se lirait « rien à faire », ce qui est un mensonge). Les comptes sont
   // ceux de la section entière : la recherche filtre la zone C, pas la colonne.
-  const sections: { key: Exclude<RkbSection, "all">; label: string; html: string; count: number; rows: number; failed: boolean }[] = [
+  const sections: { key: Exclude<RkbSection, "all">; label: string; html: string; count: number; countLabel: string; rows: number; failed: boolean }[] = [
     {
       key: "files",
       label: L.grpFiles,
-      html: fetched.repairs ? masterdbRepairsSectionHtml(fetched.repairs) : failedHtml("sift-rkb-masterdb-section", L.grpFiles),
-      count: pendingOf(fetched.repairs),
-      rows: fetched.repairs?.length ?? 0,
-      failed: !fetched.repairs,
+      html: fetched.repairs && !vFiles.error ? masterdbRepairsSectionHtml(fetched.repairs) : failedHtml("sift-rkb-masterdb-section", L.grpFiles),
+      count: vFiles.error ? 0 : pendingOf(fetched.repairs),
+      countLabel: vFiles.count,
+      rows: vFiles.error ? 0 : (fetched.repairs?.length ?? 0),
+      failed: vFiles.error,
     },
     {
       key: "meta",
       label: L.grpMeta,
-      html: fetched.metas ? metadataSyncsSectionHtml(fetched.metas) : failedHtml("sift-rkb-mds-section", L.grpMeta),
-      count: pendingOf(fetched.metas),
-      rows: fetched.metas?.length ?? 0,
-      failed: !fetched.metas,
+      html: fetched.metas && !vMeta.error ? metadataSyncsSectionHtml(fetched.metas) : failedHtml("sift-rkb-mds-section", L.grpMeta),
+      count: vMeta.error ? 0 : pendingOf(fetched.metas),
+      countLabel: vMeta.count,
+      rows: vMeta.error ? 0 : (fetched.metas?.length ?? 0),
+      failed: vMeta.error,
     },
     {
       key: "art",
       label: L.grpArt,
-      html: fetched.arts ? artworkSyncsSectionHtml(fetched.arts) : failedHtml("sift-rkb-mas-section", L.grpArt),
-      count: pendingOf(fetched.arts),
-      rows: fetched.arts?.length ?? 0,
-      failed: !fetched.arts,
+      html: fetched.arts && !vArt.error ? artworkSyncsSectionHtml(fetched.arts) : failedHtml("sift-rkb-mas-section", L.grpArt),
+      count: vArt.error ? 0 : pendingOf(fetched.arts),
+      countLabel: vArt.count,
+      rows: vArt.error ? 0 : (fetched.arts?.length ?? 0),
+      failed: vArt.error,
     },
     {
       key: "dedup",
       label: L.grpPlaylists,
-      html: fetched.dedups ? playlistDuplicatesSectionHtml(fetched.dedups) : failedHtml("sift-rkb-dedup-section", L.grpPlaylists),
-      count: fetched.dedups?.length ?? 0,
-      rows: fetched.dedups?.length ?? 0,
-      failed: !fetched.dedups,
+      html: fetched.dedups && !vDedup.error ? playlistDuplicatesSectionHtml(fetched.dedups) : failedHtml("sift-rkb-dedup-section", L.grpPlaylists),
+      count: vDedup.error ? 0 : (fetched.dedups?.length ?? 0),
+      countLabel: vDedup.count,
+      rows: vDedup.error ? 0 : (fetched.dedups?.length ?? 0),
+      failed: vDedup.error,
     },
   ];
   failedSections = sections.filter((x) => x.failed).length;
@@ -515,7 +531,7 @@ function paintRekordbox(content: HTMLElement, status: RekordboxLinkStatus): void
     `<nav class="sift-rkb-side" aria-label="${L.sideAria}">` +
     `<div class="col-h">${L.sideHeader}</div>` +
     entry("all", L.sideAll, failedSections ? "—" : String(totalPending)) +
-    sections.map((x) => entry(x.key, x.label, x.failed ? "—" : String(x.count))).join("") +
+    sections.map((x) => entry(x.key, x.label, x.countLabel)).join("") +
     `</nav>`;
 
   // Fichier : le chemin, et les deux actions du XML près du XML (Finder : Check for Update sous
