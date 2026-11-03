@@ -207,6 +207,11 @@ dans chaque issue.
 | **A17/A18** | Table `actions` renommée dans la base du bac à sable pendant que l'app tourne, puis Journal | Carte « Impossible de lire le journal. Vérifie la connexion à la base et réessaie. » + « Réessayer » — pas « Rien dans cette session ». Table rétablie, « Réessayer » rend l'écran normal | `a17-a18-journal-illisible.png` ; témoin sain avant casse : `a17-a18-temoin-journal-sain.png` | **Tenu** |
 | **A13/A14/A15** | Voir la note ci-dessous : réponses substituées dans la page, pas de dossier renommé | Tête « synchronisation indisponible » ; ligne `master.db :` qui nomme le fichier manquant ; section Playlists « master.db introuvable (…) — la synchronisation Rekordbox reste indisponible tant qu'il manque » ; boutons de synchro désactivés. **Mais** Fichiers, Métadonnées et Pochettes affichent « 0 » et leurs sections sont absentes | `a13-a15-rekordbox-sans-masterdb.png` | **A14 et A15 tenus. A13 partiel** ([#84](https://github.com/c0remusic/sift/issues/84)) : trois catégories sur quatre disent « rien en attente » quand rien ne peut être détecté |
 
+**Suite, le même jour** : les trois défauts sont corrigés et fermés, chacun revu dans le bac à
+sable avec le même échec provoqué — #85 (le bandeau nomme la cause, sans chemin), #86 (le marqueur
+passe sur la seconde ligne, le nom reste entier), #84 (les quatre sections disent `master.db`,
+compte « — », rangées d'avant masquées : décision d'Antoine).
+
 ### A13 : ce qui a été exercé, et ce qui ne l'a pas été
 
 Le protocole demandait de renommer `Pioneer/rekordbox`. Sur cette machine ce dossier est le
