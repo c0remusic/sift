@@ -71,8 +71,11 @@ const MATRIX = [
   ["aacmf256", ["-c:a", "aac_mf", "-b:a", "256k"], "m4a"],
   ["aacmf128", ["-c:a", "aac_mf", "-b:a", "128k"], "m4a"],
   ["vorbisq5", ["-c:a", "libvorbis", "-q:a", "5"], "ogg"],
+  // Vorbis q8 et WMA 320k passent au-dessus de 20 kHz : seul le banc `cadrage` les voit (#100).
+  ["vorbisq8", ["-c:a", "libvorbis", "-q:a", "8"], "ogg"],
   ["opus128", ["-c:a", "libopus", "-b:a", "128k"], "opus"],
   ["wma192", ["-c:a", "wmav2", "-b:a", "192k"], "wma"],
+  ["wma320", ["-c:a", "wmav2", "-b:a", "320k"], "wma"],
 ];
 
 const AUDIO = new Set([".aif", ".aiff", ".wav", ".flac"]);
