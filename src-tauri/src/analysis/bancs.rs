@@ -345,7 +345,9 @@ pub struct Banc {
 /// Vorbis et WMA, aveugles aux deux autres lignes — voir [`CADRAGE_BLOCS`] pour le balayage qui a
 /// ramené sa dépense sans perdre la séparation. ⚠️ Il n'est PLUS « le seul à coûter des
 /// secondes » : la recalibration du 2026-09-22 montre que `aac` coûte 4,9 s et `mp3` 1,1 s, donc
-/// les trois se comptent en secondes et l'écart cadrage/aac n'est que de 1,17.
+/// les trois se comptent en secondes et l'écart cadrage/aac n'est que de 1,17. Depuis le passage
+/// à 12 blocs (2026-11-04), `cadrage` coûte MOINS que `aac` : les deux lignes ont échangé leur
+/// rang. Sans effet sur le résultat, [`sonder`] plie un maximum, sans cascade.
 pub static BANCS_PRODUCTION: [Banc; 3] = [
     Banc {
         nom: "mp3",
@@ -356,20 +358,20 @@ pub static BANCS_PRODUCTION: [Banc; 3] = [
         mesurer: mesure_mp3,
     },
     Banc {
+        nom: "cadrage",
+        voit: "tout codec MDCT — dont Vorbis et WMA, aveugles aux deux autres lignes",
+        cout_ms: 4_470,
+        avant: amont_lossless_non_dementi,
+        apres: aval_au_dessus_de_la_falaise,
+        mesurer: mesure_cadrage,
+    },
+    Banc {
         nom: "aac",
         voit: "AAC, deux résolutions MDCT — blocs longs (224 cellules) et courts (64)",
         cout_ms: 4_900,
         avant: amont_lossless_non_dementi,
         apres: aval_au_dessus_de_la_falaise,
         mesurer: mesure_aac,
-    },
-    Banc {
-        nom: "cadrage",
-        voit: "tout codec MDCT — dont Vorbis et WMA, aveugles aux deux lignes ci-dessus",
-        cout_ms: 5_750,
-        avant: amont_lossless_non_dementi,
-        apres: aval_au_dessus_de_la_falaise,
-        mesurer: mesure_cadrage,
     },
 ];
 
@@ -532,7 +534,21 @@ fn mesure_mp3(signal: &Signal<'_>, reglage: &Reglage) -> Vec<Mesure> {
 /// la production.
 const CADRAGE_JEUX: [Jeu; 2] = [framing::JEUX[1], framing::JEUX[4]];
 
-/// Demi-seconde à 44,1 kHz, seize blocs.
+/// Demi-seconde à 44,1 kHz, douze blocs.
+///
+/// **12 depuis le 2026-11-04, seul réglage de balayage qui ait survécu au contrôle de #100.** Le
+/// bloc « 16 plutôt que 12 » plus bas garde le raisonnement d'origine : la marge qu'il défend est
+/// bien perdue, et c'est un choix fait en connaissance de cause. Contrôlé sur les 6 952 pistes
+/// lossless de la vraie bibliothèque, contre les verdicts en base : 0 verdict changé, et les
+/// 2 pistes illisibles le sont aussi à 16. Coût mesuré le même jour, même séance, 6 fichiers :
+/// 4,47 s contre 5,90 s par fichier. Le débit du pool à 4 fils passe de 17,0 à 20,5 pistes/min.
+///
+/// ⚠️ Ce contrôle ne couvre PAS les faux que seule cette ligne attrape : la bibliothèque n'a aucun
+/// faux Vorbis ni WMA (voir [`framing::ALIGNEMENT_MIN`]). Pour eux, la preuve à 12 blocs reste le
+/// corpus fabriqué, et le minimum de 8 blocs retenus de la table ci-dessous.
+///
+/// Pas de bump de `REPORT_CACHE_VERSION` : aucun verdict ne change, donc un rapport écrit à
+/// 16 blocs reste juste, et un bump coûterait une ré-analyse complète pour le même résultat.
 ///
 /// **MESURÉ le 2026-09-15**, et c'est la mesure qui a autorisé l'entrée de cette ligne en table.
 /// La séparation avait d'abord été établie à 30 blocs (~4 500 ms par fichier) ; le balayage
@@ -562,7 +578,8 @@ const CADRAGE_JEUX: [Jeu; 2] = [framing::JEUX[1], framing::JEUX[4]];
 ///
 /// 10 ne tient pas : un vrai descend à 0,333, sous [`framing::ALIGNEMENT_MIN`].
 ///
-/// **16 plutôt que 12, et c'est une SECONDE marge qui tranche.** Les deux tiennent le seuil, et 12
+/// **16 plutôt que 12, et c'est une SECONDE marge qui tranche** (décision du 2026-09-15, revue le
+/// 2026-11-04, voir plus haut). Les deux tiennent le seuil, et 12
 /// coûte 26 % de moins. Mais [`framing::BLOCS_ALIGNEMENT_MIN`] exige huit blocs RETENUS pour que
 /// la mesure existe, et la distribution des blocs retenus dit ceci :
 ///
@@ -581,7 +598,7 @@ const CADRAGE_JEUX: [Jeu; 2] = [framing::JEUX[1], framing::JEUX[4]];
 /// la décision le retient par ALIGNEMENT : un seul fichier basculait sur l'autre jeu et publiait
 /// son alignement. Corrigé, le tableau est monotone.
 const CADRAGE_BLOC: usize = framing::BLOC / 2;
-const CADRAGE_BLOCS: usize = 16;
+const CADRAGE_BLOCS: usize = 12;
 
 /// Le seul banc qui demande un signal MONO — il le dérive lui-même, une fois, et seulement s'il
 /// tourne. Les deux autres lisent le PCM entrelacé tel que `decode_pcm` le rend.
@@ -1165,7 +1182,7 @@ mod tests {
         assert_eq!(verdict::QUANT_LAMBDA_MP3, 0.18);
         assert_eq!(
             BANCS_PRODUCTION.iter().map(|b| b.nom).collect::<Vec<_>>(),
-            vec!["mp3", "aac", "cadrage"],
+            vec!["mp3", "cadrage", "aac"],
             "la table de production, du moins cher au plus cher"
         );
         assert_eq!(

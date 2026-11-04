@@ -279,6 +279,9 @@ pub struct AnalysisReport {
 /// banc ait changé : l'absolu dérive d'un tiers entre sessions ici, pas le rang. Les deux
 /// chiffres sont vrais à leur date ; ne pas lire l'écart comme une régression. Voir
 /// [`bancs::Banc::cout_ms`].
+///
+/// **Reste à 14 le 2026-11-04** alors que `cadrage` passe de 16 à 12 blocs : 0 verdict changé sur
+/// 6 952 pistes, donc les rapports existants restent justes (voir `bancs::CADRAGE_BLOCS`).
 pub const REPORT_CACHE_VERSION: i64 = 14;
 
 /// Lit le cache `(tracks.report_json, tracks.report_cache_ver)`. Version absente, version distancée
