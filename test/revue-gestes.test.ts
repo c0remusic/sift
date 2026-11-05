@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionsSecondairesHtml, gesteDeTouche } from "../frontend/revue-gestes";
+import { actionsSecondairesHtml, gesteDeTouche, suiteCorbeille } from "../frontend/revue-gestes";
 
 describe("gestes secondaires de Revue", () => {
   it("⌫ et X mettent à la corbeille, jamais en liste d'achat", () => {
@@ -12,6 +12,15 @@ describe("gestes secondaires de Revue", () => {
 
   it("les autres touches ne portent aucun geste", () => {
     for (const k of ["Enter", " ", "i", "Delete"]) expect(gesteDeTouche(k)).toBeNull();
+  });
+
+  it("une piste que Rekordbox joue se confirme, un doute se dit, une absence passe", () => {
+    expect(suiteCorbeille({ state: "present", playlists: 0 })).toBe("confirmer");
+    expect(suiteCorbeille({ state: "present", playlists: 3 })).toBe("confirmer");
+    expect(suiteCorbeille({ state: "absent" })).toBe("direct");
+    expect(suiteCorbeille({ state: "unknown" })).toBe("noter");
+    expect(suiteCorbeille({ state: "unverified", reason: "rekordbox_open" })).toBe("noter");
+    expect(suiteCorbeille({ state: "unverified", reason: "xml_snapshot" })).toBe("noter");
   });
 
   it("les deux boutons sont là, Re-source avant Corbeille", () => {

@@ -1,4 +1,5 @@
-import { fileTrack, listQueue, rejectTrack, requeueTrack, restoreTrack, revertBatch, trashTrack } from "./ipc";
+import { fileTrack, listQueue, rekordboxUseOfTrack, rejectTrack, requeueTrack, restoreTrack, revertBatch, trashTrack } from "./ipc";
+import { suiteCorbeille, type SuiteCorbeille } from "./revue-gestes";
 import type { QueueItem, TrackFileOutcome } from "../shared/contracts";
 import { FILE_IN_PLACE } from "../shared/contracts";
 import { esc } from "./dom";
@@ -404,6 +405,22 @@ async function doRevert(batchId: string): Promise<void> {
   }
 }
 
+/** Ce que Rekordbox impose avant la corbeille. Sa lecture qui échoue ne bloque pas le tri, mais se
+ *  dit : le toast annonce alors une présence non vérifiée. `false` : l'utilisateur a renoncé. */
+async function avantCorbeille(trackId: number): Promise<Exclude<SuiteCorbeille, "confirmer"> | false> {
+  let usage;
+  try {
+    usage = await rekordboxUseOfTrack(trackId);
+  } catch (e) {
+    console.error("rekordbox_use_of_track", e);
+    return "noter";
+  }
+  const suite = suiteCorbeille(usage);
+  if (suite !== "confirmer") return suite;
+  const playlists = usage.state === "present" ? usage.playlists : 0;
+  return (await confirmAction(T().trashPlayed(playlists), T().trashPlayedButton)) ? "direct" : false;
+}
+
 /** Les deux gestes secondaires de la piste ouverte. Re-source : liste d'achat, le fichier ne bouge
  *  pas. Corbeille : le fichier part dans la corbeille de son disque (`revue-gestes.ts`). */
 export async function doSecondary(
@@ -418,8 +435,16 @@ export async function doSecondary(
   openState.acting = true;
   setActionsDisabled(true);
   try {
+    const suite = kind === "trash" ? await avantCorbeille(trackId) : "direct";
+    if (suite === false) {
+      setActionsDisabled(false);
+      openState.acting = false;
+      return;
+    }
     await (kind === "resource" ? rejectTrack(trackId) : trashTrack(trackId));
-    toast(kind === "resource" ? T().markedResource : T().trashed, true, () => {
+    const message =
+      kind === "resource" ? T().markedResource : suite === "noter" ? T().trashedUnchecked : T().trashed;
+    toast(message, true, () => {
       void (kind === "resource" ? requeueTrack(trackId) : restoreTrack(trackId)).catch((e) => {
         toast(humanizeError(e, ToastT().undoFailed, `${kind} undo`), false);
       });

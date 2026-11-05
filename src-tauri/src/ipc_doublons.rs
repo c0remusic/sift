@@ -10,7 +10,7 @@
 use crate::db;
 use crate::doublons::{self, DupScreenGroup, Faits, RekordboxDoubt, RekordboxUse};
 use crate::filing;
-use crate::rekordbox_presence::{self, Presence, PresenceSource};
+use crate::rekordbox_presence::{self, Presence, PresenceSource, PresenceSources};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -92,6 +92,35 @@ fn lister_bloquant(app: AppHandle) -> Result<Vec<DupScreenGroup>, String> {
         .collect();
     doublons::trier(&mut groupes);
     Ok(groupes)
+}
+
+/// Rekordbox joue-t-il cette piste ? Demandé par Revue avant de mettre un fichier à la corbeille.
+/// Lit toute la collection (`rekordbox_presence`), donc hors du fil, verrou relâché.
+#[tauri::command]
+pub async fn rekordbox_use_of_track(app: AppHandle, track_id: i64) -> Result<RekordboxUse, String> {
+    crate::ipc::hors_du_fil(move || {
+        let state = app.state::<Mutex<Connection>>();
+        let (path, sources) = {
+            let conn = db::lock_conn(&state)?;
+            (
+                filing::track_path(&conn, track_id).map_err(|e| e.to_string())?,
+                rekordbox_presence::presence_sources(&conn).map_err(|e| e.to_string())?,
+            )
+        };
+        Ok(usage_d_une_piste(&path, &sources))
+    })
+    .await
+}
+
+/// `usage_rekordbox` d'un seul fichier. Sans XML lié, l'intégration est inactive et rien ne peut
+/// casser : `Absent`, pour ne pas avertir à chaque geste quelqu'un qui n'utilise pas Rekordbox.
+/// `Unknown` reste réservé à des sources qui existent mais ne se lisent pas.
+fn usage_d_une_piste(path: &str, sources: &PresenceSources) -> RekordboxUse {
+    if sources.linked_xml.is_none() {
+        return RekordboxUse::Absent;
+    }
+    let presence = rekordbox_presence::rekordbox_presence(sources);
+    usage_rekordbox(presence.of(path), doute_rekordbox(presence.source()))
 }
 
 /// Pourquoi la source lue ne peut pas affirmer qu'une copie est absente de Rekordbox ; `None`
@@ -585,6 +614,47 @@ mod tests {
             RekordboxUse::Unverified {
                 reason: RekordboxDoubt::XmlSnapshot
             }
+        );
+    }
+
+    /// MUTATION : retirer la garde `linked_xml` de `usage_d_une_piste` : le cas sans XML rend
+    /// `Unknown`, et Revue avertirait à chaque geste quelqu'un qui n'a pas Rekordbox.
+    #[test]
+    fn l_usage_d_une_piste_vient_de_la_collection() {
+        let dir = tempfile::tempdir().expect("dossier temporaire");
+        let xml = dir.path().join("linked.xml");
+        std::fs::write(&xml, crate::rekordbox_xml::SAMPLE_XML).expect("écriture du XML");
+        let lie = PresenceSources {
+            linked_xml: Some(xml),
+            masterdb: None,
+        };
+        assert_eq!(
+            usage_d_une_piste("C:/Music/House/mr-fingers.mp3", &lie),
+            RekordboxUse::Present { playlists: 1 }
+        );
+        assert_eq!(
+            usage_d_une_piste("C:/Music/Inconnue.mp3", &lie),
+            RekordboxUse::Unverified {
+                reason: RekordboxDoubt::XmlSnapshot
+            },
+            "un XML ne peut pas affirmer l'absence"
+        );
+        let sans_rekordbox = PresenceSources {
+            linked_xml: None,
+            masterdb: None,
+        };
+        assert_eq!(
+            usage_d_une_piste("C:/Music/House/mr-fingers.mp3", &sans_rekordbox),
+            RekordboxUse::Absent,
+            "intégration inactive : rien à protéger"
+        );
+        let illisible = PresenceSources {
+            linked_xml: Some(dir.path().join("absent.xml")),
+            masterdb: None,
+        };
+        assert_eq!(
+            usage_d_une_piste("C:/Music/House/mr-fingers.mp3", &illisible),
+            RekordboxUse::Unknown
         );
     }
 

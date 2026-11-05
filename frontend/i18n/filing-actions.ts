@@ -41,6 +41,10 @@ const fr = {
   convertedWithNote: (name: string, note: string) => `Converti — ${name} : ${note}`,
   markedResource: "Marqué à re-sourcer",
   trashed: "Mis à la corbeille",
+  trashedUnchecked: "Mis à la corbeille — présence dans Rekordbox non vérifiée",
+  trashPlayed: (n: number) =>
+    `Rekordbox joue cette piste${n > 0 ? ` (${n} playlist${n > 1 ? "s" : ""})` : ""}. À la corbeille, il ne trouvera plus le fichier.`,
+  trashPlayedButton: "Mettre à la corbeille",
   markResourceFailed: "Impossible de marquer à re-sourcer — réessaie",
   trashFailed: "Impossible de mettre la piste à la corbeille — réessaie",
 };
@@ -70,6 +74,10 @@ const en: typeof fr = {
   convertedWithNote: (name, note) => `Converted — ${name}: ${note}`,
   markedResource: "Marked to re-source",
   trashed: "Moved to Trash",
+  trashedUnchecked: "Moved to Trash — not checked against Rekordbox",
+  trashPlayed: (n) =>
+    `Rekordbox plays this track${n > 0 ? ` (${n} playlist${n > 1 ? "s" : ""})` : ""}. In the Trash, it won't find the file anymore.`,
+  trashPlayedButton: "Move to Trash",
   markResourceFailed: "Couldn't mark to re-source — try again",
   trashFailed: "Couldn't move the track to Trash — try again",
 };

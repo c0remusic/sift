@@ -5,7 +5,19 @@
 // deux gestes sont donc présents sur TOUTE piste, et chaque touche garde le même sens, quel que soit
 // le verdict. ⌫ a longtemps changé de sens selon le verdict : ne pas y revenir.
 
+import type { RekordboxUse } from "../shared/contracts";
+
 export type GesteSecondaire = "resource" | "trash";
+
+/** La suite d'un geste Corbeille. Déplacer un fichier que Rekordbox joue lui fait perdre sa piste :
+ *  ça se confirme. Mais une modale à chaque piste tuerait le tri quand Rekordbox est ouvert, où
+ *  toute la file est `unverified` : le doute se dit dans le toast. */
+export type SuiteCorbeille = "confirmer" | "noter" | "direct";
+
+export function suiteCorbeille(usage: RekordboxUse): SuiteCorbeille {
+  if (usage.state === "present") return "confirmer";
+  return usage.state === "absent" ? "direct" : "noter";
+}
 
 /** Le geste d'une touche nue de Revue, `null` si elle n'en porte aucun. */
 export function gesteDeTouche(key: string): GesteSecondaire | null {

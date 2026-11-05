@@ -455,6 +455,7 @@ pub fn run() {
             ipc_filing::purge_trash,
             ipc_filing::find_duplicate,
             ipc_doublons::list_duplicate_groups,
+            ipc_doublons::rekordbox_use_of_track,
             ipc_doublons::refuse_duplicate_group,
             ipc_doublons::apply_duplicate_plan,
             ipc_doublons::stop_duplicate_plan,

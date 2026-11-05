@@ -758,7 +758,7 @@ Couches 1 et 2 de `DESIGN.md` § 9, plus la couche 3 propre à cet écran :
 |---|---|
 | `Espace` | Lecture / pause |
 | `Entrée` | Convertir (ranger) |
-| `⌫` ou `X` | Corbeille, quel que soit le verdict : le fichier part dans la corbeille de son disque |
+| `⌫` ou `X` | Corbeille, quel que soit le verdict : le fichier part dans la corbeille de son disque. Si Rekordbox joue la piste, confirmation d'abord (focus sur Annuler). Si sa présence n'a pu être vérifiée, le toast le dit |
 | `R` | Re-source, quel que soit le verdict : la piste va dans À re-sourcer, le fichier ne bouge pas |
 | `I` | Identifier |
 | `↑` `↓` | Piste précédente / suivante dans la file |

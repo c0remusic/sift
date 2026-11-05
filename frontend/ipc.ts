@@ -44,6 +44,7 @@ import type {
   SpectrogramGrid,
   EncodeProfile,
 } from "../shared/contracts";
+import type { RekordboxUse } from "../shared/contracts";
 import { decodeB85 } from "./b85";
 import type { Lang } from "./i18n";
 
@@ -429,6 +430,10 @@ export const updateMetadata = (trackId: number, edit: MetadataEdit): Promise<str
 /** Écran Doublons : tous les groupes de la bibliothèque (file et Rangés), dans l'ordre de
  *  l'écran. Calculé hors du fil de la fenêtre (`ipc_doublons.rs`). */
 export const listDuplicateGroups = (): Promise<DupScreenGroup[]> => invoke("list_duplicate_groups");
+
+/** Rekordbox joue-t-il cette piste ? Lit toute la collection. */
+export const rekordboxUseOfTrack = (trackId: number): Promise<RekordboxUse> =>
+  invoke("rekordbox_use_of_track", { trackId });
 
 /** « Ce ne sont pas des doublons » : les paires du groupe ne relient plus. Rend le nombre de
  *  paires ajoutées. */
