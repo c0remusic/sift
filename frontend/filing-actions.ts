@@ -1,4 +1,4 @@
-import { fileTrack, listQueue, rejectTrack, requeueTrack, revertBatch } from "./ipc";
+import { fileTrack, listQueue, rejectTrack, requeueTrack, restoreTrack, revertBatch, trashTrack } from "./ipc";
 import type { QueueItem, TrackFileOutcome } from "../shared/contracts";
 import { FILE_IN_PLACE } from "../shared/contracts";
 import { esc } from "./dom";
@@ -404,9 +404,8 @@ async function doRevert(batchId: string): Promise<void> {
   }
 }
 
-/** Re-sourcer (fake) ou Écarter (non-fake) the current track — both are the same reversible
- *  reject_track path now (annotation: "jeter devrait etre écarté, et finir dans écarter"); `kind`
- *  stays two-valued only to pick the right toast wording, not a different backend action anymore. */
+/** Les deux gestes secondaires de la piste ouverte. Re-source : liste d'achat, le fichier ne bouge
+ *  pas. Corbeille : le fichier part dans la corbeille de son disque (`revue-gestes.ts`). */
 export async function doSecondary(
   mid: HTMLElement,
   kind: "resource" | "trash",
@@ -419,9 +418,9 @@ export async function doSecondary(
   openState.acting = true;
   setActionsDisabled(true);
   try {
-    await rejectTrack(trackId);
-    toast(kind === "resource" ? T().markedResource : T().setAside, true, () => {
-      void requeueTrack(trackId).catch((e) => {
+    await (kind === "resource" ? rejectTrack(trackId) : trashTrack(trackId));
+    toast(kind === "resource" ? T().markedResource : T().trashed, true, () => {
+      void (kind === "resource" ? requeueTrack(trackId) : restoreTrack(trackId)).catch((e) => {
         toast(humanizeError(e, ToastT().undoFailed, `${kind} undo`), false);
       });
     });
@@ -429,7 +428,7 @@ export async function doSecondary(
     toast(
       humanizeError(
         e,
-        kind === "resource" ? T().markResourceFailed : T().setAsideFailed,
+        kind === "resource" ? T().markResourceFailed : T().trashFailed,
         kind,
       ),
       false,

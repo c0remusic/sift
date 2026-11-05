@@ -40,9 +40,9 @@ const fr = {
   failedBecause: (name: string, reason: string) => `Conversion échouée — ${name}. ${reason}`,
   convertedWithNote: (name: string, note: string) => `Converti — ${name} : ${note}`,
   markedResource: "Marqué à re-sourcer",
-  setAside: "Écarté",
+  trashed: "Mis à la corbeille",
   markResourceFailed: "Impossible de marquer à re-sourcer — réessaie",
-  setAsideFailed: "Impossible d'écarter la piste — réessaie",
+  trashFailed: "Impossible de mettre la piste à la corbeille — réessaie",
 };
 
 const en: typeof fr = {
@@ -69,9 +69,9 @@ const en: typeof fr = {
   failedBecause: (name, reason) => `Conversion failed — ${name}. ${reason}`,
   convertedWithNote: (name, note) => `Converted — ${name}: ${note}`,
   markedResource: "Marked to re-source",
-  setAside: "Set aside",
+  trashed: "Moved to Trash",
   markResourceFailed: "Couldn't mark to re-source — try again",
-  setAsideFailed: "Couldn't set the track aside — try again",
+  trashFailed: "Couldn't move the track to Trash — try again",
 };
 
 export const D = { fr, en };

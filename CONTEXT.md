@@ -26,7 +26,7 @@ File »), `queue.rs`. _Avoid_: « queue » (identifiant de code seulement), « f
 d'attente » en libellé.
 
 **Revue** — l'écran de décision, un morceau à la fois : écouter, vérifier le
-diagnostic, identifier, choisir la destination, convertir ou écarter. Poste
+diagnostic, identifier, choisir la destination, convertir, re-sourcer ou mettre à la corbeille. Poste
 central du produit. Source : `content.md`, `foundations.md`, `report-view.ts`.
 _Avoid_: « inspecteur », « détail » comme nom d'écran.
 

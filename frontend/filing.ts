@@ -61,6 +61,7 @@ import {
 import { doRanger, doSecondary } from "./filing-actions";
 import { markApplied } from "./identify-candidates";
 import { isBareKey, isUndoChord } from "./key-chords";
+import { actionsSecondairesHtml, gesteDeTouche } from "./revue-gestes";
 import { T } from "./i18n/filing";
 
 export { TARGET_LABEL } from "./filing-preview";
@@ -203,16 +204,9 @@ function renderFoot(mid: HTMLElement, rail: string): void {
     })
     .join("");
 
-  const fake = state.track?.verdict === "fake";
   // Text only (annotation: "supprime les icones") — the shortcut is still named in the tooltip
   // and the standalone kbd-hints legend, not repeated as a glyph inside the button itself.
-  // "Jeter" relabelled "Écarter" (annotation: "jeter devrait etre écarté, et finir dans écarter")
-  // — it now routes to Écartés (reject_track) like the fake branch, not a permanent delete;
-  // real deletion is still available from the Écartés screen itself (ecartes-view.ts's own
-  // trash action), so this button is no longer the only path to "gone for good".
-  const secondary = fake
-    ? `<button data-fil="resource" class="sift-secondary-resource" title="${tx.resourceTitle}">${tx.resource}</button>`
-    : `<button data-fil="trash" class="sift-secondary-trash" title="${tx.setAsideTitle}">${tx.setAside}</button>`;
+  const secondary = actionsSecondairesHtml(tx);
 
   // Réglages structurés (wireframe v2 option 3, choisi 2026-08-21) : chacun sous son petit label
   // (Destination · Format · Nom final) séparés par des filets verticaux. Ils vivent DANS la boîte
@@ -238,12 +232,12 @@ function renderFoot(mid: HTMLElement, rail: string): void {
     `</div>` +
     `</div>`;
   // Pied de boîte : bande bord à bord au bas de la boîte (motif alerte du kit, § 06-02) — légende
-  // clavier à gauche, Écarter puis Convertir au bord trailing. Le filet haut et la surface sont
+  // clavier à gauche, Re-source, Corbeille puis Convertir au bord trailing. Le filet haut et la surface sont
   // portés par `.sift-filbox-foot` lui-même, plus par une rangée intérieure. La légende, retirée
   // le 2026-09-03 (audit œil-Apple), est RESTAURÉE le 2026-09-05 sur retour d'Antoine — voir
   // `keyboardHintsHtml` (report-view.ts) pour la décision datée.
   foot.innerHTML =
-    `<span class="sift-rail-kbd">${keyboardHintsHtml()}</span>` +
+    `<span class="sift-rail-kbd sift-rail-kbd-revue">${keyboardHintsHtml()}</span>` +
     `<div class="sift-rail-abtns">` + secondary +
     `<button data-fil="ranger" class="sift-ranger-btn"></button></div>`;
   if (filedBanner) settings.prepend(filedBanner); // restore the banner above the freshly-rendered controls
@@ -748,11 +742,10 @@ export function installFilingKeys(): void {
       e.preventDefault();
       blurShortcutFocus();
       document.querySelector<HTMLElement>('[data-fil="ranger"]')?.click();
-    } else if (e.key === "Backspace" || e.key === "x" || e.key === "X") {
-      // ⌫ is the model's Discard key; X kept as an alias (matches the visible button hint).
+    } else if (gesteDeTouche(e.key)) {
       e.preventDefault();
       blurShortcutFocus();
-      document.querySelector<HTMLElement>('[data-fil="resource"],[data-fil="trash"]')?.click();
+      document.querySelector<HTMLElement>(`[data-fil="${gesteDeTouche(e.key)}"]`)?.click();
     } else if (e.key === "i" || e.key === "I") {
       // [m9] I = trigger Identifier (same as clicking the button)
       blurShortcutFocus();

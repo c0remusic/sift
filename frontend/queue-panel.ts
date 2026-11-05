@@ -588,7 +588,7 @@ export function installQueueNavKeys(): void {
             : undefined,
         },
         {
-          label: L.setAside,
+          label: L.trashOne,
           danger: true,
           separated: true,
           onPick: () => {

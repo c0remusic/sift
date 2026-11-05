@@ -2626,6 +2626,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    annulent exactement le padding 16 de `.sift-player-row` — latéral et bas — donc la bande atteint
    les bords de la boîte sans jamais les dépasser.
    L'écart au-dessus vient du `gap` de la boîte, pas d'une marge propre. */
+/* Revue : cinq entrées de légende et trois boutons ne tiennent pas sur une ligne dans une boîte
+   étroite. La légende passe alors au-dessus et les boutons gardent le bord trailing, sans quoi elle
+   s'empile sur cinq lignes (161 px mesurés à 382 px de large, 2026-11-05). */
+.sift-filbox-foot:has(.sift-rail-kbd-revue){flex-wrap:wrap}
+.sift-rail-kbd-revue{flex:1 1 380px}
+.sift-rail-kbd-revue~.sift-rail-abtns{margin-left:auto}
 .sift-filbox-foot{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);
   margin:0 calc(-1 * var(--space-16)) calc(-1 * var(--space-16));
   padding:var(--space-12) var(--space-16);

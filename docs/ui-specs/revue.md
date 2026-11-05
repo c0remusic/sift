@@ -178,13 +178,13 @@ La boîte de lecture (`.sift-player-row`) devient le poste de décision complet,
    Nom final — le contenu de l'ex-rangée du haut du pied, tel quel ;
 4. **pied de boîte** : bande distincte par surface (`--color-background-secondary`,
    filet haut `--color-border-tertiary`), **bord à bord de la boîte** (marges négatives),
-   coins bas au rayon de la boîte — **légende clavier à gauche**, **Écarter** puis
-   **Convertir** au trailing. Motif : l'alerte du kit (§ 06-02), carte + rangée de boutons en
+   coins bas au rayon de la boîte — **légende clavier à gauche**, **Re-source**, **Corbeille** puis
+   **Convertir** au trailing (deux boutons sur toute piste, décidé le 2026-11-05). Motif : l'alerte du kit (§ 06-02), carte + rangée de boutons en
    bas. La légende a été retirée le 2026-09-03 (audit œil-Apple : Apple n'écrit jamais les
    raccourcis en dur dans une fenêtre) puis **restaurée le 2026-09-05 sur retour d'Antoine**
    (« je préférais avec la légende ») — préférence produit assumée contre le patron Apple, à
    ne pas re-retirer sur le seul argument HIG. Les tooltips posés au retrait restent
-   (Convertir « Entrée », Écarter « ⌫ », lecture « espace ») : deux canaux.
+   (Convertir « Entrée », Corbeille « ⌫ », Re-source « R », lecture « espace ») : deux canaux.
 
 Le **pied de panneau disparaît en Détail** : `#filfoot` n'y reçoit plus de contenu (le
 bandeau « Rangé » suit les contrôles dans la boîte). Bas de panneau = espace (volet de
@@ -255,9 +255,9 @@ déclenche rien.
   une infobulle.
 - **Bandeau (piste A)** : sous la surface de travail, un emplacement `.sift-fil-club` voisin de
   celui du doublon, sur la MÊME recette (`.sift-dup-banner`, fond `--color-background-warning`,
-  icône d'alerte). Titre : « Sous 320 kbps — trop bas pour le club ». Ligne : « Écarter (⌫) le met
+  icône d'alerte). Titre : « Sous 320 kbps — trop bas pour le club ». Ligne : « Re-source (R) le met
   dans À re-sourcer, pour le racheter ». La proposition est dite en mots ; l'action reste le bouton
-  Écarter existant, rien de neuf à cliquer. Deux règles, venues de la relecture adverse :
+  Re-source existant, rien de neuf à cliquer. Deux règles, venues de la relecture adverse :
   - **pas de bandeau sur un FAUX**, dont le pied propose déjà « Re-sourcer » : le bandeau
     nommerait un bouton absent ;
   - **décidé sur le rapport d'analyse**, la ligne de file en repli, comme le choix du rail. Une
@@ -736,13 +736,13 @@ et le plancher horodaté de 250 ms reste le garde. In-app, **jamais** `window.co
 - **Clic** sur **« Sélectionner »** (tête de file) : arme le mode Batch (cases par ligne) ; le
   bouton devient « Terminé » et désarme. **Clic** sur le **bouton de filtre** (même rangée, à
   gauche) : ouvre le menu cochable.
-- **Clic droit** ligne : Ouvrir l'emplacement · Réanalyser · Écarter · Changer la
+- **Clic droit** ligne : Ouvrir l'emplacement · Réanalyser · Envoyer à la corbeille · Changer la
   destination. En mode Batch, agit sur la sélection : Ranger N · Changer la destination ·
   Écarter N · Envoyer N à la corbeille — Écarter et Corbeille portent sur TOUTE la sélection
   depuis le 2026-10-30 (ils ne visaient que les faux), confirmation au-delà de 10 comme
   Bibliothèque. **Livré et vérifié le 2026-08-26** (`a31ebf2`) — le menu ne servait que le mode
   Batch jusque-là. En mode Détail le clic droit OUVRE d'abord la ligne, comme dans Finder ou
-  Mail : « Écarter » et « Changer la destination » agissent sur la zone C, donc sur la piste
+  Mail : « Envoyer à la corbeille » et « Changer la destination » agissent sur la zone C, donc sur la piste
   ouverte, et non sur un identifiant.
 - **Clic** sur le lecteur : déplace la lecture. **Survol** : bulle mm:ss seule — patron QuickTime. Le ghost fill et la ligne fine que cette ligne décrivait sont partis avec la waveform le 2026-08-27 (`31c5d1a`, slider fin du kit, voir le tableau du 08-27 plus haut).
 - **Clic** sur le temps : **bascule écoulé / restant** (une seule valeur affichée).
@@ -758,7 +758,8 @@ Couches 1 et 2 de `DESIGN.md` § 9, plus la couche 3 propre à cet écran :
 |---|---|
 | `Espace` | Lecture / pause |
 | `Entrée` | Convertir (ranger) |
-| `⌫` ou `X` | Écarter, ou Re-source si le verdict est `fake` |
+| `⌫` ou `X` | Corbeille, quel que soit le verdict : le fichier part dans la corbeille de son disque |
+| `R` | Re-source, quel que soit le verdict : la piste va dans À re-sourcer, le fichier ne bouge pas |
 | `I` | Identifier |
 | `↑` `↓` | Piste précédente / suivante dans la file |
 
@@ -787,7 +788,7 @@ rayons (ci-dessous).
 
 - **Convertir** = *push button* primaire : aplat d'accent (`--color-accent-fill`) + texte
   blanc (`--color-accent-ink`).
-- **Écarter** = *push button* **secondaire = gris rempli** (fond `--overlay-selected`, texte
+- **Corbeille** et **Re-source** = *push buttons* **secondaires = gris rempli** (fond `--overlay-selected`, texte
   encre). Le kit **ne connaît pas** le ghost à bordure — à ne pas réintroduire.
   ⚠️ **CSS aligné le 2026-09-07 seulement** : `.sift-secondary-trash` portait depuis le
   2026-08-19 une **encre danger** (et Re-source une encre warning), antérieure à cette ligne et

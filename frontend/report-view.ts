@@ -177,7 +177,7 @@ export function keyboardHintsHtml(): string {
   const k = (key: string, what: string) => `<span><b>${key}</b> ${what}</span>`;
   return (
     `<div class="sift-kbd-hints">` +
-    k("SPACE", t.kbdListen) + k("ENTER", t.kbdConvert) + k("BKSP", t.kbdSetAside) + k(t.kbdUpDown, t.kbdNavigate) +
+    k("SPACE", t.kbdListen) + k("ENTER", t.kbdConvert) + k("BKSP", t.kbdTrash) + k("R", t.kbdResource) + k(t.kbdUpDown, t.kbdNavigate) +
     `</div>`
   );
 }

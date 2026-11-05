@@ -6,7 +6,7 @@
 // « Écarter » → « Set aside » (jamais « Discard »), « Nom final » → « Final name ». Les pistes
 // écartées atterrissent dans l'écran « À re-sourcer », « To re-source » en anglais.
 //
-// ⚠️ Les infobulles (`fmtNoUpscale`, `resourceTitle`, `setAsideTitle`) sont posées dans un attribut
+// ⚠️ Les infobulles (`fmtNoUpscale`, `resourceTitle`, `trashTitle`) sont posées dans un attribut
 // `title` non échappé : aucune valeur n'y porte de guillemet droit ni de chevron. La puce DUPLICATE
 // n'est pas ici : c'est du jargon conservé, identique dans les deux langues.
 import { dict } from "../i18n";
@@ -19,9 +19,9 @@ const fr = {
   convertNeedsArtist: "Renseigne l'artiste avant de convertir",
   fmtNoUpscale: "Pas de surqualité depuis un fichier lossy",
   resource: "Re-source",
-  resourceTitle: "Fichier faux — va dans À re-sourcer (⌫)",
-  setAside: "Écarter",
-  setAsideTitle: "Écarter — va dans À re-sourcer (⌫)",
+  resourceTitle: "Re-source — va dans À re-sourcer, pour le racheter (R)",
+  trash: "Corbeille",
+  trashTitle: "Corbeille — déplace le fichier, restaurable (⌫)",
   destination: "Destination",
   format: "Format",
   finalName: "Nom final",
@@ -39,7 +39,7 @@ const fr = {
   dupMaybe: "Doublon possible (même nom — à vérifier)",
   dupSeeGroup: "Voir le groupe",
   clubHead: "Sous 320 kbps — trop bas pour le club",
-  clubBody: "Écarter (⌫) le met dans À re-sourcer, pour le racheter.",
+  clubBody: "Re-source (R) le met dans À re-sourcer, pour le racheter.",
   queueReloadFailed: "La file n'a pas pu être relue — réessaie.",
   readIncomplete: "LECTURE INCOMPLÈTE",
   undone: "Action annulée",
@@ -53,9 +53,9 @@ const en: typeof fr = {
   convertNeedsArtist: "Fill in the artist before converting",
   fmtNoUpscale: "No upscaling from a lossy file",
   resource: "Re-source",
-  resourceTitle: "Fake file — goes to To re-source (⌫)",
-  setAside: "Set aside",
-  setAsideTitle: "Set aside — goes to To re-source (⌫)",
+  resourceTitle: "Re-source — goes to To re-source, to buy again (R)",
+  trash: "Trash",
+  trashTitle: "Trash — moves the file, restorable (⌫)",
   destination: "Destination",
   format: "Format",
   finalName: "Final name",
@@ -73,7 +73,7 @@ const en: typeof fr = {
   dupMaybe: "Possible duplicate (same name — check it)",
   dupSeeGroup: "See the group",
   clubHead: "Under 320 kbps — too low for the club",
-  clubBody: "Set aside (⌫) moves it to To re-source, to buy again.",
+  clubBody: "Re-source (R) moves it to To re-source, to buy again.",
   queueReloadFailed: "Couldn't reload the queue — try again.",
   readIncomplete: "INCOMPLETE READ",
   undone: "Action undone",
