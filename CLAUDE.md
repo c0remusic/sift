@@ -361,8 +361,8 @@ envoyée par `save_annotation` qui append `docs/annotations.jsonl`.
   ⚠️ Cette ligne a dit « Aucun runtime async. Ni `tokio` ni `async-std` dans l'arbre » jusqu'au
   2026-09-16, et les deux moitiés étaient fausses : **tokio est dans `Cargo.lock` par
   transitivité de `tauri`**, et son runtime (`tauri::async_runtime`) tourne déjà pour la
-  plomberie de Tauri. **Quatre** commandes y touchent, dont le corps part sur
-  `tauri::async_runtime::spawn_blocking`, chacune avec sa justification en doc-comment :
+  plomberie de Tauri. Des commandes y touchent, dont le corps part sur
+  `tauri::async_runtime::spawn_blocking` :
   - `ipc::analyze_path` (2026-09-16). Synchrone, elle s'exécutait sur le fil de la fenêtre
     (`wry` → `add_WebMessageReceived`, `tauri::protocol` en ligne, `tauri-macros` `Blocking` par
     défaut) et y bloquait 33 à 60 s sur un cache périmé — `Responding=False` mesuré sur l'app en
@@ -373,8 +373,12 @@ envoyée par `save_annotation` qui append `docs/annotations.jsonl`.
     écran Doublons) : lire 3 400 pistes puis échantillonner des fichiers (≈ 4 s à la première
     ouverture, mesuré sur une copie de la vraie base), et déplacer N fichiers. Décision ACTÉE avec
     la spec `docs/ui-specs/doublons.md`, validée par Antoine — pas un suivi de motif.
-  Même forme, gardée par un test de source chacune (`…_reste_hors_du_fil_de_la_fenetre`).
-  Étendre à une cinquième commande reste une décision, pas un suivi de motif.
+  - `list_sources`, `list_queue`, `analysis_progress`, `playback_url`, `find_duplicate`,
+    `list_ecartes` (2026-11-05, #91), par `ipc::hors_du_fil`. Pendant une analyse, les deux
+    premières portaient 69 gels sur 70.
+  **Toute commande neuve qui lit la base ou le disque naît hors du fil** (décision #91). Le test
+  `la_liste_des_commandes_synchrones_ne_peut_que_raccourcir` (`lib.rs`) tient en cliquet la liste
+  de celles qui restent synchrones.
 - **SQLite = `Mutex<Connection>` derrière un Tauri `State`.** Utiliser
   `db::lock_conn(&conn)`, jamais `.lock().map_err(...)` à la main.
 - **Toute connexion à `sift.db` lit par mmap** (`db::open`, `db::open_secondary`, décidé le 2026-11-05, #93).

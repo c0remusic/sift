@@ -520,6 +520,130 @@ mod demarrage_tests {
 }
 
 #[cfg(test)]
+mod commandes_tests {
+    /// Cliquet de la décision du 2026-11-03 (issue #91) : les commandes ENCORE synchrones, donc
+    /// exécutées sur le fil de la fenêtre. Égalité exacte. Une commande neuve qui lit la base ou le
+    /// disque naît hors du fil, et une commande sortie du fil quitte cette liste dans le même geste.
+    const ENCORE_SYNCHRONES: &[&str] = &[
+        "add_source",
+        "app_info",
+        "apply_release",
+        "apply_tags",
+        "db_health",
+        "drive_usage",
+        "eject_drive",
+        "export_rekordbox_xml",
+        "ffmpeg_version",
+        "file_batch",
+        "file_cancel",
+        "file_track",
+        "format_drive",
+        "format_step",
+        "get_encode_profile",
+        "get_session_id",
+        "get_setting",
+        "import_paths",
+        "library_folders",
+        "library_usage",
+        "link_rekordbox_xml",
+        "list_bins",
+        "list_journal",
+        "list_library",
+        "list_removable_drives",
+        "locate_source",
+        "open_drive",
+        "open_url",
+        "preview_filename",
+        "purge_trash",
+        "reanalyze_tracks",
+        "reconcile",
+        "refuse_duplicate_group",
+        "reject_batch",
+        "reject_track",
+        "rekordbox_masterdb_dismiss_artwork_sync",
+        "rekordbox_masterdb_dismiss_metadata_sync",
+        "rekordbox_masterdb_dismiss_repair",
+        "rekordbox_masterdb_pending_artwork_syncs",
+        "rekordbox_masterdb_pending_metadata_syncs",
+        "rekordbox_masterdb_pending_repairs",
+        "rekordbox_masterdb_resolve_ambiguous",
+        "rekordbox_masterdb_resolve_ambiguous_artwork_sync",
+        "rekordbox_masterdb_resolve_ambiguous_metadata_sync",
+        "rekordbox_masterdb_scan_playlist_duplicates",
+        "rekordbox_masterdb_set_sync_stop",
+        "rekordbox_status",
+        "remove_source",
+        "report_smoke",
+        "requeue_track",
+        "rescan_source",
+        "reset_encode_profile",
+        "restore_track",
+        "reveal_track",
+        "revert_batch",
+        "save_annotation",
+        "scan_library_duplicates",
+        "set_encode_profile",
+        "set_setting",
+        "set_source_color",
+        "set_source_watched",
+        "set_ui_lang",
+        "stop_duplicate_plan",
+        "track_file_tags",
+        "track_release",
+        "trash_track",
+        "undo_last",
+        "update_metadata",
+        "verify_discogs_token",
+    ];
+
+    fn sources() -> Vec<&'static str> {
+        vec![
+            include_str!("dev_annotate.rs"),
+            include_str!("dev_locate.rs"),
+            include_str!("ipc.rs"),
+            include_str!("ipc_doublons.rs"),
+            include_str!("ipc_filing.rs"),
+            include_str!("ipc_identify.rs"),
+            include_str!("ipc_library.rs"),
+            include_str!("ipc_usage.rs"),
+            include_str!("ipc_usb.rs"),
+        ]
+    }
+
+    /// Lit les commandes d'un source. Ignore les lignes de ce test, qui ne sont pas des attributs.
+    fn synchrones(source: &str) -> Vec<String> {
+        let mut noms = Vec::new();
+        let mut attendue = false;
+        for ligne in source.lines() {
+            let ligne = ligne.trim_start();
+            if ligne.starts_with("#[tauri::command") {
+                attendue = true;
+            } else if attendue && ligne.starts_with("pub async fn ") {
+                attendue = false;
+            } else if attendue && ligne.starts_with("pub fn ") {
+                attendue = false;
+                let nom = ligne["pub fn ".len()..]
+                    .split(['(', '<'])
+                    .next()
+                    .unwrap_or("");
+                noms.push(nom.to_string());
+            }
+        }
+        noms
+    }
+
+    #[test]
+    fn la_liste_des_commandes_synchrones_ne_peut_que_raccourcir() {
+        let mut vues: Vec<String> = sources().into_iter().flat_map(synchrones).collect();
+        vues.sort();
+        vues.dedup();
+        let mut attendues: Vec<String> = ENCORE_SYNCHRONES.iter().map(|s| s.to_string()).collect();
+        attendues.sort();
+        assert_eq!(vues, attendues);
+    }
+}
+
+#[cfg(test)]
 mod updater_config_classification_tests {
     use super::is_missing_updater_config;
 

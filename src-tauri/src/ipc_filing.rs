@@ -1517,19 +1517,24 @@ pub fn get_session_id(conn: State<'_, Mutex<Connection>>) -> Result<String, Stri
 
 /// Best duplicate match for a track (by name; sound-confirmed once the acoustic layer lands).
 #[tauri::command]
-pub fn find_duplicate(
-    conn: State<'_, Mutex<Connection>>,
-    track_id: i64,
-) -> Result<Option<DupMatch>, String> {
-    let conn = db::lock_conn(&conn)?;
-    dedup::find_duplicate(&conn, track_id).map_err(|e| e.to_string())
+pub async fn find_duplicate(app: AppHandle, track_id: i64) -> Result<Option<DupMatch>, String> {
+    crate::ipc::hors_du_fil(move || {
+        let state = app.state::<Mutex<Connection>>();
+        let conn = db::lock_conn(&state)?;
+        dedup::find_duplicate(&conn, track_id).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// List the rejected/trashed tracks for the Écartés view.
 #[tauri::command]
-pub fn list_ecartes(conn: State<'_, Mutex<Connection>>) -> Result<Vec<EcarteItem>, String> {
-    let conn = db::lock_conn(&conn)?;
-    ecartes::list_ecartes(&conn).map_err(|e| e.to_string())
+pub async fn list_ecartes(app: AppHandle) -> Result<Vec<EcarteItem>, String> {
+    crate::ipc::hors_du_fil(move || {
+        let state = app.state::<Mutex<Connection>>();
+        let conn = db::lock_conn(&state)?;
+        ecartes::list_ecartes(&conn).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// Restore a trashed track's file and re-queue it (status pending).

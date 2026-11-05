@@ -82,10 +82,28 @@ pub fn add_source(
     sources::get(&conn, id).map_err(|e| e.to_string())
 }
 
+/// Exécute le corps d'une commande sur l'exécuteur prévu pour bloquer. Une commande synchrone tourne
+/// en ligne sur le fil de la fenêtre : voir `analyze_path` pour la mécanique, et l'issue #91 pour la
+/// décision. Le verrou de la base reste pris, seule la fenêtre ne l'attend plus.
+pub(crate) async fn hors_du_fil<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| {
+        crate::tr!(
+            "le fil de la commande n'a pas rendu : {e}",
+            "the command thread didn't return: {e}"
+        )
+    })?
+}
+
 #[tauri::command]
-pub fn list_sources(conn: State<'_, Mutex<Connection>>) -> Result<Vec<sources::Source>, String> {
-    let conn = db::lock_conn(&conn)?;
-    sources::list(&conn).map_err(|e| e.to_string())
+pub async fn list_sources(app: AppHandle) -> Result<Vec<sources::Source>, String> {
+    hors_du_fil(move || {
+        let state = app.state::<Mutex<Connection>>();
+        let conn = db::lock_conn(&state)?;
+        sources::list(&conn).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -105,14 +123,19 @@ pub fn remove_source(
 }
 
 #[tauri::command]
-pub fn list_queue(conn: State<'_, Mutex<Connection>>) -> Result<Vec<queue::QueueItem>, String> {
+pub async fn list_queue(app: AppHandle) -> Result<Vec<queue::QueueItem>, String> {
+    hors_du_fil(move || list_queue_bloquant(&app)).await
+}
+
+fn list_queue_bloquant(app: &AppHandle) -> Result<Vec<queue::QueueItem>, String> {
     // Deux lectures brèves sous le verrou, puis le verrou tombe. Le regroupement par nom
     // (`group_name_dups`) normalise le nom de CHAQUE piste de la bibliothèque — il tournait sous le
     // verrou global, donc à chaque ouverture de la file d'attente, pendant que le pool d'analyse
     // attendait. Rien ici n'est un read-modify-write : les deux lectures ne servent qu'à annoter
     // des lignes déjà chargées, une piste ajoutée entre-temps sera vue au rafraîchissement suivant.
     let (mut items, dup_rows, refus) = {
-        let conn = db::lock_conn(&conn)?;
+        let state = app.state::<Mutex<Connection>>();
+        let conn = db::lock_conn(&state)?;
         let items = queue::list_pending(&conn).map_err(|e| e.to_string())?;
         let rows = crate::dedup::load_name_dup_rows(&conn).map_err(|e| e.to_string())?;
         let refus = crate::doublons::charger_refus(&conn).map_err(|e| e.to_string())?;
@@ -296,10 +319,14 @@ pub struct AnalysisProgress {
 
 /// Background-analysis progress: how many pending tracks are already analysed, out of total.
 #[tauri::command]
-pub fn analysis_progress(conn: State<'_, Mutex<Connection>>) -> Result<AnalysisProgress, String> {
-    let conn = db::lock_conn(&conn)?;
-    let (done, total) = crate::worker::progress(&conn).map_err(|e| e.to_string())?;
-    Ok(AnalysisProgress { done, total })
+pub async fn analysis_progress(app: AppHandle) -> Result<AnalysisProgress, String> {
+    hors_du_fil(move || {
+        let state = app.state::<Mutex<Connection>>();
+        let conn = db::lock_conn(&state)?;
+        let (done, total) = crate::worker::progress(&conn).map_err(|e| e.to_string())?;
+        Ok(AnalysisProgress { done, total })
+    })
+    .await
 }
 
 /// Run the analysis engine on a track and return the full report. Constrained to paths Sift
@@ -619,13 +646,14 @@ fn webview_needs_wav(path: &str, ext: &str) -> bool {
 /// check narrows the blast radius to files Sift already indexed, which the webview can enumerate
 /// through the normal listing commands anyway.
 #[tauri::command]
-pub fn playback_url(
-    app: AppHandle,
-    conn: State<'_, Mutex<Connection>>,
-    path: String,
-) -> Result<String, String> {
+pub async fn playback_url(app: AppHandle, path: String) -> Result<String, String> {
+    hors_du_fil(move || playback_url_bloquant(&app, path)).await
+}
+
+fn playback_url_bloquant(app: &AppHandle, path: String) -> Result<String, String> {
     {
-        let c = db::lock_conn(&conn)?;
+        let state = app.state::<Mutex<Connection>>();
+        let c = db::lock_conn(&state)?;
         let known: i64 = c
             .query_row(
                 "SELECT count(*) FROM tracks WHERE path=?1",
@@ -954,6 +982,32 @@ fn spawn_scans(app: AppHandle, target: ScanTarget) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #91 : ces commandes lisent la base ou le disque, elles ne tournent pas sur le fil de
+    /// la fenêtre. Pendant une analyse, elles portaient 69 gels sur 70.
+    #[test]
+    fn commandes_de_lecture_restent_hors_du_fil_de_la_fenetre() {
+        let source = include_str!("ipc.rs");
+        let filing = include_str!("ipc_filing.rs");
+        for (source, nom) in [
+            (source, "list_sources"),
+            (source, "list_queue"),
+            (source, "analysis_progress"),
+            (source, "playback_url"),
+            (filing, "find_duplicate"),
+            (filing, "list_ecartes"),
+        ] {
+            let debut = source
+                .find(&format!("pub async fn {nom}("))
+                .unwrap_or_else(|| panic!("`{nom}` doit rester `async`"));
+            let corps = &source[debut..];
+            let fin = corps.find("\n}").expect("fin de la commande");
+            assert!(
+                corps[..fin].contains("hors_du_fil("),
+                "`{nom}` ne passe plus par `hors_du_fil` : elle gèlerait la fenêtre"
+            );
+        }
+    }
     use crate::analysis::Spectrogram;
 
     /// Mirrors `ScanDone` in shared/contracts.ts. Exhaustive destructure (no `..`): fails to compile
