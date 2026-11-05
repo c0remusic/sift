@@ -127,6 +127,12 @@ fn replay(r: &AnalysisReport) -> Result<crate::analysis::Verdict, NotMeasured> {
 /// est soit entièrement appliquée, soit pas du tout — un arrêt au milieu ne laisse pas la moitié de
 /// la bibliothèque à une version et l'autre moitié à l'autre.
 pub fn run(conn: &mut Connection) -> rusqlite::Result<Stats> {
+    let decided = decide(conn)?;
+    apply(conn, &decided)
+}
+
+/// La lecture de la passe, sans aucune écriture.
+fn decide(conn: &Connection) -> rusqlite::Result<Vec<(i64, Outcome)>> {
     // Le filtre reproduit celui que `verdict::cached` applique à la lecture : version absente
     // (ligne d'avant la v22) ou différente = pas de verdict courant. Les trois gardes sur
     // `report_json` écartent respectivement l'absence, la sentinelle d'échec de `persist_failure`
@@ -179,25 +185,29 @@ pub fn run(conn: &mut Connection) -> rusqlite::Result<Stats> {
             },
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    drop(stmt);
+    Ok(decided)
+}
 
+/// L'écriture de la passe. Le pool et `ipc::analyze_path` tournent en même temps depuis que la
+/// passe a quitté `setup` : une ligne déjà passée à la version courante depuis [`decide`] porte une
+/// mesure plus récente que celle jugée ici, et elle ne s'écrase pas. D'où `verdict_ver IS NOT ?`.
+fn apply(conn: &mut Connection, decided: &[(i64, Outcome)]) -> rusqlite::Result<Stats> {
     let mut stats = Stats::default();
     let tx = conn.transaction()?;
-    for (id, outcome) in &decided {
+    for (id, outcome) in decided {
         match outcome {
             Outcome::Restamp(v) => {
-                tx.execute(
-                    "UPDATE tracks SET verdict=?2, verdict_ver=?3 WHERE id=?1",
+                stats.restamped += tx.execute(
+                    "UPDATE tracks SET verdict=?2, verdict_ver=?3 WHERE id=?1 AND verdict_ver IS NOT ?3",
                     rusqlite::params![id, v, verdict::VERDICT_CACHE_VERSION],
                 )?;
-                stats.restamped += 1;
             }
             Outcome::Clear => {
-                tx.execute(
-                    "UPDATE tracks SET verdict=NULL, verdict_ver=NULL WHERE id=?1",
-                    rusqlite::params![id],
+                stats.out_of_domain += tx.execute(
+                    "UPDATE tracks SET verdict=NULL, verdict_ver=NULL \
+                     WHERE id=?1 AND verdict_ver IS NOT ?2",
+                    rusqlite::params![id, verdict::VERDICT_CACHE_VERSION],
                 )?;
-                stats.out_of_domain += 1;
             }
             Outcome::SkipParse => stats.skipped_parse += 1,
         }
@@ -226,6 +236,27 @@ pub fn run_and_log(conn: &mut Connection) -> rusqlite::Result<Stats> {
 mod tests {
     use super::*;
     use crate::worker::tests::fake_report;
+
+    /// Une analyse qui aboutit entre la lecture et l'écriture de la passe garde son verdict.
+    #[test]
+    fn une_ligne_rejugee_pendant_la_passe_n_est_pas_ecrasee() {
+        let mut conn = db();
+        let json = serde_json::to_string(&fake_report()).unwrap();
+        let id = seed(&conn, "pending", Some("ok"), Some(0), &json);
+        let decided = decide(&conn).unwrap();
+        assert_eq!(decided.len(), 1, "la ligne périmée doit être jugée");
+        conn.execute(
+            "UPDATE tracks SET verdict='fake', verdict_ver=?2 WHERE id=?1",
+            rusqlite::params![id, verdict::VERDICT_CACHE_VERSION],
+        )
+        .unwrap();
+        let stats = apply(&mut conn, &decided).unwrap();
+        assert_eq!(stats.restamped, 0);
+        let v: String = conn
+            .query_row("SELECT verdict FROM tracks WHERE id=?1", [id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, "fake");
+    }
 
     fn db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();

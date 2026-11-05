@@ -51,7 +51,7 @@ mod watcher;
 mod worker;
 
 use std::sync::Mutex;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 /// Extends the DWM frame into the whole client area (all margins -1) so Windows treats the
 /// entire window as "glass" instead of drawing its own opaque backdrop in the native resize-margin
@@ -164,6 +164,60 @@ const JOURNAL_PURGE_START_DELAY: std::time::Duration = std::time::Duration::from
 /// the alternative — a timer thread — buys nothing for a desktop app that gets relaunched.
 /// `purge_expired_journal` releases the DB lock between batches; the delay here only keeps the
 /// very first query away from the launch burst.
+/// Ce que le démarrage doit faire en traversant `tracks`, hors du fil de la fenêtre.
+///
+/// POURQUOI UN FIL. Ces lectures passaient par `setup`, donc avant le premier rendu. Base hors du
+/// cache système, elles lisaient ≈ 390 Mo depuis le disque (`report_json`, voir `db::MMAP_PRAGMA`)
+/// et le premier contenu arrivait à 3 – 4 s (issue #93).
+///
+/// L'ORDRE N'EST PAS LIBRE. Le re-verdict rejoue le verdict sur les mesures DÉJÀ stockées, sans
+/// ré-analyse : il passe avant le premier `refill` et avant le scan, dont la fin rappelle `refill`,
+/// sinon le pool ré-analyse des pistes qu'il suffisait de re-juger. Coût du pire cas MESURÉ
+/// (`cout_de_la_passe_sur_3386_lignes`, `--release`, 2026-09-01) : ≈ 430 ms pour 3 386 lignes
+/// toutes à re-juger, c'est-à-dire après un bump de version. Sa propre connexion, pour ne pas tenir
+/// le verrou de la connexion partagée pendant ce temps.
+///
+/// Après un bump, la file peut montrer « non analysé » le temps de la passe, d'où le
+/// `queue:changed` quand elle a réparé quelque chose. Un événement du watcher peut devancer le
+/// re-verdict et rappeler `refill` : le pool ré-analyse alors une piste pour rien, sans erreur.
+///
+/// Un échec ne fait pas tomber le démarrage : une base lisible dont le re-verdict échoue reste une
+/// app utilisable. Les lignes gardent l'état « pas de verdict courant » que toute l'UI sait
+/// afficher, et la passe se rejoue au lancement suivant. Le scan et le pool partent quand même.
+fn spawn_boot_passes(app: &tauri::AppHandle, db_path: std::path::PathBuf) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        match db::open_secondary(&db_path) {
+            Ok(mut conn) => {
+                match reverdict::run_and_log(&mut conn) {
+                    Ok(stats) if stats != reverdict::Stats::default() => {
+                        app.emit("queue:changed", ()).ok();
+                    }
+                    Ok(_) => {}
+                    Err(e) => log::warn!(
+                        "passe de re-verdict au démarrage échouée (rejouée au prochain lancement): {e}"
+                    ),
+                }
+                // Ce que la passe n'a PAS pu réparer et que le pool va reprendre après la file
+                // (issue #59) : dit une fois au démarrage, pour que ce silence ne dure plus une
+                // semaine.
+                match worker::count_filed_needing_analysis(&conn) {
+                    Ok(0) => {}
+                    Ok(n) => log::info!(
+                        "{n} piste(s) rangée(s) sans verdict courant : reprises par le pool d'analyse après la file"
+                    ),
+                    Err(e) => {
+                        log::warn!("compte des pistes rangées sans verdict courant impossible: {e}")
+                    }
+                }
+            }
+            Err(e) => log::warn!("passe de re-verdict au démarrage impossible: {e}"),
+        }
+        ipc::spawn_startup_scan(app.clone());
+        worker::refill(&app);
+    });
+}
+
 fn spawn_journal_purge(app: &tauri::AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
@@ -269,31 +323,8 @@ pub fn run() {
             std::fs::create_dir_all(&dir)
                 .map_err(|e| format!("création du dossier de données {} impossible: {e}", dir.display()))?;
             let db_path = dir.join("sift.db");
-            let mut conn = db::open(&db_path)
+            let conn = db::open(&db_path)
                 .map_err(|e| format!("ouverture de la base {} impossible: {e}", db_path.display()))?;
-            // Re-verdict depuis les mesures DÉJÀ stockées, sans ré-analyse (2026-09-01, bump
-            // `VERDICT_CACHE_VERSION` 1 → 2). Ici et pas ailleurs : la connexion est ouverte,
-            // migrée, et encore exclusive — aucun thread du pool n'existe. Idempotente : quand tout
-            // est déjà à la version courante elle ne lit aucune ligne et ne journalise rien. Coût du
-            // pire cas MESURÉ (`cout_de_la_passe_sur_3386_lignes`, `--release`, 2026-09-01) :
-            // 420 / 433 / 434 ms pour 3 386 lignes toutes à re-juger — un bump de version, donc.
-            //
-            // L'échec ne fait PAS tomber le démarrage, contrairement aux trois étapes ci-dessus :
-            // une base lisible dont le re-verdict échoue reste une app utilisable — les lignes
-            // concernées gardent l'état « pas de verdict courant » que toute l'UI sait afficher, et
-            // la passe se rejouera au lancement suivant.
-            if let Err(e) = reverdict::run_and_log(&mut conn) {
-                log::warn!("passe de re-verdict au démarrage échouée (rejouée au prochain lancement): {e}");
-            }
-            // Ce que la passe n'a PAS pu réparer et que le pool va reprendre après la file (issue
-            // #59) : dit une fois au démarrage, pour que ce silence ne dure plus une semaine.
-            match worker::count_filed_needing_analysis(&conn) {
-                Ok(0) => {}
-                Ok(n) => log::info!(
-                    "{n} piste(s) rangée(s) sans verdict courant : reprises par le pool d'analyse après la file"
-                ),
-                Err(e) => log::warn!("compte des pistes rangées sans verdict courant impossible: {e}"),
-            }
             let session_id = format!(
                 "{}-{}",
                 std::time::SystemTime::now()
@@ -333,9 +364,6 @@ pub fn run() {
                 .allow_directory(&covers, false)
                 .map_err(|e| format!("autorisation du cache de pochettes impossible: {e}"))?;
             watcher::start_all(app.handle());
-            // Après les watchers : un fichier qui arrive pendant la marche est vu par l'un ou
-            // l'autre, jamais par aucun. Voir `ipc::spawn_startup_scan`.
-            ipc::spawn_startup_scan(app.handle().clone());
             // Le cache de lecture ramené sous son plafond au démarrage (43 Go mesurés le
             // 2026-10-30, jamais purgés jusque-là). Sur un fil : effacer des Go prend du temps.
             std::thread::spawn(|| {
@@ -349,7 +377,9 @@ pub fn run() {
                 }
             });
             worker::init(app.handle());
-            worker::refill(app.handle());
+            // Après les watchers : un fichier qui arrive pendant la marche du scan est vu par l'un
+            // ou l'autre, jamais par aucun. Voir `spawn_boot_passes`.
+            spawn_boot_passes(app.handle(), db_path);
             spawn_journal_purge(app.handle());
             #[cfg(windows)]
             if let Some(w) = app.get_webview_window("main") {
@@ -445,6 +475,48 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod demarrage_tests {
+    fn entre<'a>(source: &'a str, debut: &str, fin: &str) -> &'a str {
+        let d = source.find(debut).expect("début de section introuvable");
+        let f = source[d..].find(fin).expect("fin de section introuvable");
+        &source[d..d + f]
+    }
+
+    /// Les passes qui traversent `tracks` restent hors du fil de la fenêtre : base hors cache, elles
+    /// y lisaient ≈ 390 Mo depuis le disque avant le premier rendu (issue #93).
+    #[test]
+    fn les_passes_sur_tracks_restent_hors_de_setup() {
+        let setup = entre(include_str!("lib.rs"), ".setup(|app| {", ".invoke_handler(");
+        for appel in [
+            "reverdict::",
+            "count_filed_needing_analysis",
+            "worker::refill",
+            "spawn_startup_scan",
+        ] {
+            assert!(!setup.contains(appel), "{appel} est revenu dans setup");
+        }
+        assert!(
+            setup.contains("spawn_boot_passes("),
+            "setup ne lance plus les passes"
+        );
+    }
+
+    /// Re-verdict AVANT le premier `refill` et avant le scan, dont la fin rappelle `refill` : sinon
+    /// le pool ré-analyse ce que la passe répare sans lire un fichier.
+    #[test]
+    fn le_re_verdict_passe_avant_le_pool_et_le_scan() {
+        let corps = entre(include_str!("lib.rs"), "fn spawn_boot_passes(", "\n}");
+        let rang = |appel: &str| {
+            corps
+                .find(appel)
+                .unwrap_or_else(|| panic!("{appel} absent"))
+        };
+        assert!(rang("reverdict::run_and_log") < rang("spawn_startup_scan"));
+        assert!(rang("reverdict::run_and_log") < rang("worker::refill"));
+    }
 }
 
 #[cfg(test)]
