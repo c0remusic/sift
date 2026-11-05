@@ -334,12 +334,12 @@ fn default_peaks_step() -> usize {
 ///   6 min stéréo 44,1 kHz = 360 × 44 100 × 2 × 4 =  127 Mo   (la piste DJ typique)
 ///   plafond 48 000 000 f32                       =  192 Mo   = 9,07 min stéréo 44,1 kHz
 ///                                                            = 8,33 min stéréo 48 kHz
-/// pic pool   = plafond × worker::analysis_pool_size (≤ 8)
-///            = 192 Mo × 8                          = 1,5 Go   (pire cas ABSOLU)
-///   cas réaliste, huit pistes de 6 min             = 1,0 Go
+/// pic pool   = plafond × worker::analysis_pool_size (≤ 4)
+///            = 192 Mo × 4                          = 768 Mo   (pire cas ABSOLU)
+///   cas réaliste, quatre pistes de 6 min           = 508 Mo
 /// ```
 ///
-/// Le pire cas suppose les huit threads simultanément sur des fichiers AU plafond, chacun au
+/// Le pire cas suppose les quatre threads simultanément sur des fichiers AU plafond, chacun au
 /// milieu de son décodage. Sans plafond, un seul mix d'une heure coûterait 1,2 Go à lui seul et
 /// rien ne bornerait le pic.
 ///
@@ -362,9 +362,9 @@ fn default_peaks_step() -> usize {
 const QUANT_MAX_PCM_SAMPLES: usize = 48_000_000;
 
 /// Plafond, pour TOUT le pool d'analyse, de la mémoire que les sondes retiennent en même temps
-/// (octets). Mesuré le 2026-10-30 : l'app atteignait ~2 Go chez Antoine, et la doc ci-dessus
-/// chiffre à elle seule 1 à 1,5 Go pour huit fils retenant chacun jusqu'à 192 Mo, plus le canal
-/// que les bancs dérivent pendant la sonde (~la moitié). 640 Mo laissent trois rétentions typiques
+/// (octets). Mesuré le 2026-10-30 : l'app atteignait ~2 Go chez Antoine, le pool comptait alors
+/// huit fils retenant chacun jusqu'à 192 Mo (1 à 1,5 Go), plus le canal que les bancs dérivent
+/// pendant la sonde (~la moitié). 640 Mo laissent trois rétentions typiques
 /// (6 min stéréo : ~190 Mo avec le canal) avancer de front ; les autres fils lossless ATTENDENT
 /// leur tour. Le verdict ne change pas, seul le débit d'une rafale lossless baisse.
 const QUANT_RETENTION_BUDGET: usize = 640 * 1024 * 1024;
@@ -457,14 +457,14 @@ fn retenir_pour_sonde(tampon: &mut Vec<f32>, bloc: &[f32], plafond: usize, canau
 /// Fils de balayage accordés à la sonde, **par analyse**.
 ///
 /// `analyze()` tourne DANS un thread du pool d'analyse, dimensionné à
-/// `available_parallelism().clamp(1, 8)` (`worker::analysis_pool_size`). La parallélisation interne
+/// `available_parallelism()` borné à 4 (`worker::analysis_pool_size`). La parallélisation interne
 /// de `quant_trace::balaye_decalages` s'y multiplie : à son défaut historique (16 fils), une
-/// machine à 16 cœurs ouvrirait **8 × 16 = 128 fils** pour 16 cœurs — une sur-souscription d'un
-/// facteur 8, qui se paie en changements de contexte.
+/// machine à 16 cœurs ouvrirait **4 × 16 = 64 fils** pour 16 cœurs — une sur-souscription d'un
+/// facteur 4, qui se paie en changements de contexte.
 ///
 /// 2 plutôt que 1 : le pool ne sature que quand la file est pleine, et une analyse isolée
-/// (ouverture d'une piste en Revue) profite du second fil. Dans le pire cas, 8 × 2 = 16, soit
-/// exactement le parallélisme d'une machine à 16 cœurs.
+/// (ouverture d'une piste en Revue) profite du second fil. Dans le pire cas, 4 × 2 = 8, soit la
+/// moitié du parallélisme d'une machine à 16 cœurs.
 ///
 /// Le résultat ne dépend PAS de ce nombre — `balaye_decalages` partitionne les décalages et prend
 /// un `max`, opération associative et commutative. Figé par

@@ -403,8 +403,8 @@ impl Canal {
 /// &canaux` — une boucle STRICTEMENT séquentielle, un seul canal lu à la fois. Les quatre
 /// restaient donc résidents pour rien. Au plafond de rétention
 /// (`analysis::QUANT_MAX_PCM_SAMPLES`, stéréo 44,1 kHz) ça pesait 4 × 24 M × 4 o = **384 Mo par
-/// analyse**, par-dessus les 192 Mo du PCM retenu — soit un pic de 576 Mo par fil, et 4,6 Go sur
-/// les 8 fils de `worker::analysis_pool_size`. Un seul tampon réutilisé ramène ces 384 Mo à
+/// analyse**, par-dessus les 192 Mo du PCM retenu — soit un pic de 576 Mo par fil, et 2,3 Go sur
+/// les 4 fils de `worker::analysis_pool_size`. Un seul tampon réutilisé ramène ces 384 Mo à
 /// 96 Mo, donc le pic à 288 Mo par fil.
 ///
 /// Les quatre se dérivent de `pcm` DIRECTEMENT, aucun n'a besoin d'un autre : rien n'oblige à
@@ -763,9 +763,9 @@ pub fn juge_bande_exposant(
 ///
 /// ⚠️ **`analysis::analyze` passe `Some(2)`, et ce n'est pas de la frilosité.** Cette fonction est
 /// appelée DEPUIS un thread du pool d'analyse, lui-même dimensionné à
-/// `available_parallelism().clamp(1, 8)` (`worker::analysis_pool_size`). Sans plafond, une machine
-/// à 16 cœurs faisait 8 threads de pool × 16 fils de balayage = **128 fils** pour 16 cœurs — une
-/// sur-souscription d'un facteur 8, qui coûte en changements de contexte ce qu'elle prétend gagner
+/// `available_parallelism()` borné à 4 (`worker::analysis_pool_size`). Sans plafond, une machine
+/// à 16 cœurs ferait 4 threads de pool × 16 fils de balayage = **64 fils** pour 16 cœurs — une
+/// sur-souscription d'un facteur 4, qui coûte en changements de contexte ce qu'elle prétend gagner
 /// en parallélisme. Le résultat est IDENTIQUE quel que soit le nombre de fils (le balayage est un
 /// `max` sur une partition des décalages, pas une réduction dépendante de l'ordre) — figé par
 /// `le_nombre_de_fils_ne_change_ni_le_L_ni_le_decalage`.
@@ -1423,7 +1423,7 @@ mod tests {
     /// même résolution, de 1 fil à la valeur historique.
     ///
     /// C'est ce qui autorise `analysis::analyze` à passer `Some(2)` pour ne pas sur-souscrire la
-    /// machine (8 threads de pool × 16 fils de balayage = 128 fils pour 16 cœurs) sans rien
+    /// machine (4 threads de pool × 16 fils de balayage = 64 fils pour 16 cœurs) sans rien
     /// changer au verdict — et ce qui autorise le harnais `quant_scan` à garder `None`. La
     /// propriété est structurelle : `balaye_decalages` partitionne les décalages entre les fils et
     /// prend un `max` sur les résultats, opération associative et commutative, donc indépendante

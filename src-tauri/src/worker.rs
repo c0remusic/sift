@@ -289,20 +289,32 @@ fn persist_failure(conn: &Connection, id: i64, err: &str) -> rusqlite::Result<()
 /// défaut relevé par l'audit du 2026-08-05 sur la ligne 6 du diagnostic architectural.
 /// Son pendant côté encodage est `ipc_filing::phase2_worker_count`.
 pub(crate) fn analysis_pool_size() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(2)
-        .clamp(1, 8)
+    taille_du_pool(
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(2),
+    )
+}
+
+/// Plafond de [`analysis_pool_size`] : 4 fils, ramené de 8 le 2026-11-05.
+///
+/// Les bancs se parallélisent déjà eux-mêmes, donc les fils du pool se partagent surtout les mêmes
+/// cœurs. À 8 contre 4 sur les mêmes fichiers, le débit gagne 5 à 10 %, mais l'attente par piste
+/// double presque et la fenêtre n'a plus de cœurs libres. Mesures : issues #98 et #100.
+const POOL_ANALYSE_MAX: usize = 4;
+
+fn taille_du_pool(fils_logiques: usize) -> usize {
+    fils_logiques.clamp(1, POOL_ANALYSE_MAX)
 }
 
 /// Abaisse le fil COURANT d'un cran sous la priorité normale. No-op hors Windows.
 ///
 /// POURQUOI. Les fils du pool d'analyse vivent dans le processus `sift.exe`, donc en concurrence
 /// directe avec sa propre boucle de messages — les processus renderer de WebView2, eux, sont
-/// séparés. Sur une machine à 16 cœurs le pool en occupe autant (8 fils × 2 fils de sonde, budget
-/// raisonné en `analysis/mod.rs`), et rien ne réservait de marge pour la fenêtre. Le pendant côté
-/// encodage (`ipc_filing::phase2_worker_count`) sous-souscrit délibérément ; ce pool-ci ne le
-/// faisait pas, et n'avait pas non plus de rang.
+/// séparés. Avant le plafond à 4, une machine à 16 cœurs y passait entière (8 fils × 2 fils de
+/// sonde, budget raisonné en `analysis/mod.rs`), et rien ne réservait de marge pour la fenêtre. Le
+/// pendant côté encodage (`ipc_filing::phase2_worker_count`) sous-souscrit délibérément ; ce
+/// pool-ci ne le faisait pas, et n'avait pas non plus de rang.
 ///
 /// La doc WebView2 le dit sans donner de levier : « If the app has a heavy native workload, assign
 /// thread priorities carefully, to avoid starving WebView2 threads. » Il n'existe AUCUNE API
@@ -322,7 +334,7 @@ pub(crate) fn analysis_pool_size() -> usize {
 /// are created using THREAD_PRIORITY_NORMAL ». Les fils internes de sondage, ouverts par
 /// `std::thread::scope` depuis `analysis::analyze`, naissent donc à NORMAL et cet appel ne les
 /// touche pas. Il les couvre quand même en pratique, parce que le fil parent est PARQUÉ au `join`
-/// pendant toute la durée du scope : il n'y a jamais 8 fils de pool ET 8 fils de sonde ensemble.
+/// pendant toute la durée du scope : il n'y a jamais 4 fils de pool ET 4 fils de sonde ensemble.
 /// Reste que pendant une fenêtre de sondage — annoncée à ~3,2 s par fichier contre ~35 s de
 /// temps-fil, et seulement pour une piste déclarée lossless non démentie — le calcul tourne à
 /// NORMAL. Poser l'appel aussi dans les trois `thread::scope` d'`analysis/` demanderait d'y
@@ -714,12 +726,23 @@ fn worker_loop(app: AppHandle, inner: Arc<(Mutex<Queue>, Condvar)>) {
 // `pub(crate)` pour que `fake_report` serve aussi aux tests d'`ipc.rs` : construire un
 // `AnalysisReport` à la main coûte 25 champs, et deux copies divergeraient au premier champ ajouté.
 pub(crate) mod tests {
+    /// Le pool s'arrête à 4 fils sur une grosse machine et suit le matériel en dessous.
+    #[test]
+    fn le_pool_plafonne_a_quatre_fils() {
+        assert_eq!(super::taille_du_pool(32), 4);
+        assert_eq!(super::taille_du_pool(16), 4);
+        assert_eq!(super::taille_du_pool(4), 4);
+        assert_eq!(super::taille_du_pool(3), 3);
+        assert_eq!(super::taille_du_pool(1), 1);
+        assert_eq!(super::taille_du_pool(0), 1);
+    }
+
     use super::*;
     /// Un seul fil analyse un chemin donné ; le second attend et se voit dire de relire le cache.
     ///
     /// C'est l'invariant qui supprime les doublons mesurés le 2026-09-17 en production — la même
     /// piste analysée trois fois en six secondes par trois producteurs qui s'ignoraient (pool,
-    /// ouverture de piste, prefetch). Sans lui, huit fils de pool se dépensent à refaire le même
+    /// ouverture de piste, prefetch). Sans lui, les fils du pool se dépensent à refaire le même
     /// travail et le rattrapage n'avance plus.
     ///
     /// Le test couvre les trois propriétés dont dépend cette suppression :
