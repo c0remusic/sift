@@ -377,6 +377,10 @@ envoyée par `save_annotation` qui append `docs/annotations.jsonl`.
   Étendre à une cinquième commande reste une décision, pas un suivi de motif.
 - **SQLite = `Mutex<Connection>` derrière un Tauri `State`.** Utiliser
   `db::lock_conn(&conn)`, jamais `.lock().map_err(...)` à la main.
+- **Toute connexion à `sift.db` lit par mmap** (`db::open`, `db::open_secondary`, décidé le 2026-11-05, #93).
+  `report_json`, 40 Ko, est au milieu de la ligne de `tracks` : lire une colonne placée après lui traverse
+  ses pages de débordement, soit ≈ 350 ms par liste sur la vraie base sans mmap. ⚠️ Un banc à petits
+  rapports ne voit pas ce coût : un coût SQLite sur `tracks` se mesure sur une copie de la vraie base.
 - **`db.rs::MIGRATIONS`** : index + 1 == version de schéma (`PRAGMA user_version`).
   **Ne jamais réordonner ni éditer une entrée livrée — uniquement ajouter.** Une
   colonne morte se commente, elle ne se `DROP` pas (une migration sur les bases

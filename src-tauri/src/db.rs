@@ -627,6 +627,24 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Lecture de la base par mmap, jusqu'à 1 Go, sur TOUTE connexion à `sift.db`.
+///
+/// POURQUOI. `report_json` (40 Ko en moyenne) est au milieu de la ligne de `tracks`. Lire une
+/// colonne placée après lui (`report_cache_ver`, `analysis_attempts`, `verdict_ver`) oblige SQLite à
+/// traverser ses pages de débordement, et un appel de lecture par page coûte du temps système.
+/// `typeof(report_json)` évite de lire la valeur, pas de la traverser, et un index couvrant n'aide
+/// pas. Mesuré le 2026-11-05 sur la vraie base, 8 285 pistes en file : `list_pending` 347 ms contre
+/// 41 ms, `refill` 333 contre 20. Au démarrage : utilisable à 5,2 s contre 1,5 s (issue #93). Les
+/// bancs à petits rapports ne voient rien de tout cela.
+///
+/// Toutes les connexions, parce que la doc de SQLite met en garde contre un accès mappé à côté
+/// d'un accès qui ne l'est pas. Tenu par `deux_connexions_mappees_restent_coherentes_sous_ecritures`.
+///
+/// Ce que ça coûte, connu et accepté : une erreur d'E/S sur le fichier mappé fait planter le
+/// processus au lieu de remonter une erreur SQL, et un `VACUUM` peut ne pas rendre l'espace disque
+/// sous Windows. Au-delà de 1 Go, le reste de la base se lit normalement.
+const MMAP_PRAGMA: &str = "PRAGMA mmap_size = 1073741824;";
+
 /// Opens (creating if needed) the DB at `path`, enables foreign keys, runs migrations.
 pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
@@ -635,7 +653,17 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;",
     )?;
+    conn.execute_batch(MMAP_PRAGMA)?;
     run_migrations(&conn)?;
+    Ok(conn)
+}
+
+/// Ouvre une connexion de plus sur une base déjà migrée, pour un travail long qui ne doit pas tenir
+/// le verrou de la connexion partagée (le scan de dossier).
+pub(crate) fn open_secondary(path: &std::path::Path) -> rusqlite::Result<Connection> {
+    let conn = Connection::open(path)?;
+    conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;")?;
+    conn.execute_batch(MMAP_PRAGMA)?;
     Ok(conn)
 }
 
@@ -655,6 +683,155 @@ pub fn table_count(conn: &Connection) -> rusqlite::Result<i64> {
 
 #[cfg(test)]
 mod tests {
+    const MMAP_ATTENDU: i64 = 1 << 30;
+
+    fn mmap_size(conn: &Connection) -> i64 {
+        conn.query_row("PRAGMA mmap_size", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    /// Lignes de la forme de `tracks` : une valeur de 40 Ko ENTRE deux colonnes lues ensemble.
+    fn seed_stress(conn: &Connection, lignes: i64) {
+        conn.execute_batch(
+            "CREATE TABLE stress(id INTEGER PRIMARY KEY, a INTEGER, rapport TEXT, b INTEGER);",
+        )
+        .unwrap();
+        let rapport = "x".repeat(40_000);
+        for id in 0..lignes {
+            conn.execute(
+                "INSERT INTO stress VALUES (?1, 0, ?2, 0)",
+                rusqlite::params![id, rapport],
+            )
+            .unwrap();
+        }
+    }
+
+    fn ecrit_stress(conn: &Connection, tour: i64, lignes: i64) {
+        let rapport = format!("{tour}-").repeat(10_000);
+        conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+        conn.execute(
+            "UPDATE stress SET a = a + 1, rapport = ?2, b = b + 1 WHERE id = ?1",
+            rusqlite::params![tour % lignes, rapport],
+        )
+        .unwrap();
+        // La base grandit pendant le test : le fichier dépasse ce qui était mappé au départ.
+        conn.execute(
+            "INSERT INTO stress VALUES (NULL, 1, ?1, 1)",
+            rusqlite::params![rapport],
+        )
+        .unwrap();
+        conn.execute_batch("COMMIT").unwrap();
+    }
+
+    /// Deux écrivains, un lecteur et des points de contrôle sur un même fichier WAL : un lecteur
+    /// mappé voit toujours des transactions entières, et la base reste intègre. Les pages de SQLite
+    /// sont muettes sur WAL + mmap, et ce test tient lieu de preuve sous Windows.
+    fn stress(secondaire_mappee: bool) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sift.db");
+        let main = open(&path).unwrap();
+        seed_stress(&main, 50);
+        let ouvre_seconde = || {
+            let c = open_secondary(&path).unwrap();
+            if !secondaire_mappee {
+                c.execute_batch("PRAGMA mmap_size = 0;").unwrap();
+            }
+            c
+        };
+        let scan = ouvre_seconde();
+        let lecteur = open_secondary(&path).unwrap();
+        assert_eq!(mmap_size(&main), MMAP_ATTENDU);
+        assert_eq!(mmap_size(&lecteur), MMAP_ATTENDU);
+        assert_eq!(
+            mmap_size(&scan),
+            if secondaire_mappee { MMAP_ATTENDU } else { 0 }
+        );
+
+        const TOURS: i64 = 150;
+        let fini = std::sync::atomic::AtomicBool::new(false);
+        let scan = std::sync::Mutex::new(scan);
+        let lecteur = std::sync::Mutex::new(lecteur);
+        std::thread::scope(|s| {
+            let lit = s.spawn(|| {
+                let lecteur = lecteur.lock().unwrap();
+                let mut lectures = 0;
+                let mut somme_avant = 0;
+                loop {
+                    let termine = fini.load(std::sync::atomic::Ordering::SeqCst);
+                    let (ecarts, somme): (i64, i64) = lecteur
+                        .query_row("SELECT sum(a != b), sum(a) FROM stress", [], |r| {
+                            Ok((r.get(0)?, r.get(1)?))
+                        })
+                        .unwrap();
+                    assert_eq!(ecarts, 0, "transaction vue à moitié");
+                    assert!(somme >= somme_avant, "lecture revenue en arrière");
+                    somme_avant = somme;
+                    lectures += 1;
+                    if termine {
+                        return lectures;
+                    }
+                }
+            });
+            s.spawn(|| {
+                let scan = scan.lock().unwrap();
+                for tour in 0..TOURS {
+                    ecrit_stress(&scan, tour, 50);
+                }
+            });
+            for tour in 0..TOURS {
+                ecrit_stress(&main, tour, 50);
+                if tour % 20 == 0 {
+                    main.execute_batch("PRAGMA wal_checkpoint(PASSIVE);")
+                        .unwrap();
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            fini.store(true, std::sync::atomic::Ordering::SeqCst);
+            assert!(
+                lit.join().unwrap() > 1,
+                "le lecteur n'a pas tourné pendant les écritures"
+            );
+        });
+        let (scan, lecteur) = (scan.into_inner().unwrap(), lecteur.into_inner().unwrap());
+        main.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .unwrap();
+        // Chaque tour ajoute 2 à sum(a) : 1 par l'UPDATE, 1 par la ligne neuve. Deux écrivains.
+        let somme: i64 = lecteur
+            .query_row("SELECT sum(a) FROM stress", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(somme, 2 * 2 * TOURS);
+        let ok: String = lecteur
+            .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(ok, "ok");
+
+        // Windows ne tronque pas un fichier mappé : VACUUM peut garder sa taille, jamais perdre.
+        drop(scan);
+        drop(lecteur);
+        main.execute_batch("DELETE FROM stress WHERE id % 2 = 0; VACUUM;")
+            .unwrap();
+        let ok: String = main
+            .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(ok, "ok");
+        let ecarts: i64 = main
+            .query_row("SELECT count(*) FROM stress WHERE a != b", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(ecarts, 0);
+    }
+
+    #[test]
+    fn deux_connexions_mappees_restent_coherentes_sous_ecritures() {
+        stress(true);
+    }
+
+    /// Le cas contre lequel la doc de SQLite met en garde : un accès mappé, l'autre non. Sift ne le
+    /// produit plus, ce test dit si l'ancienne forme aurait tenu.
+    #[test]
+    fn une_connexion_mappee_et_une_non_restent_coherentes_sous_ecritures() {
+        stress(false);
+    }
+
     use super::*;
     use rusqlite::Connection;
 

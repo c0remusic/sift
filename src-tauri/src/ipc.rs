@@ -842,7 +842,7 @@ fn spawn_scans(app: AppHandle, target: ScanTarget) {
                 return;
             }
         };
-        let conn = match Connection::open(&db_path) {
+        let conn = match crate::db::open_secondary(&db_path) {
             Ok(c) => c,
             Err(e) => {
                 fail_all(crate::tr!(
@@ -852,7 +852,6 @@ fn spawn_scans(app: AppHandle, target: ScanTarget) {
                 return;
             }
         };
-        let _ = conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
 
         let (startup, ids): (bool, Vec<i64>) = match target {
             ScanTarget::One(id) => (false, vec![id]),
