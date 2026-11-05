@@ -4,9 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sift — prépa sons DJ</title>
+<script>
+  // Thème forcé dans Réglages, posé avant la première peinture : `theme.ts` ne le lit qu'après un
+  // aller-retour IPC, et le lancement sauterait de couleur entre-temps.
+  try {
+    const t = localStorage.getItem("sift_theme");
+    if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  } catch {}
+</script>
 <link rel="stylesheet" href="/frontend/styles.css">
 </head>
 <body>
+<!-- Le lancement (`lancement.ts`). Première image : la pose que peint `lancement_natif.rs`. Hors
+     Tauri, `main.ts` retire ce nœud. Géométrie : `brand/mark.svg`. -->
+<div id="sift-lancement" aria-hidden="true">
+  <svg class="sift-lance-mark" viewBox="190 190 620 620"><g class="sift-lance-tout">
+    <g class="sift-lance-ambre"><rect x="245.5" y="245.5" width="357" height="357" rx="84" stroke-width="52" transform="rotate(-16 424 424)"/></g>
+    <g class="sift-lance-vert"><rect x="394" y="394" width="409" height="409" rx="110"/></g>
+  </g></svg>
+  <div class="sift-lance-nom">Sift</div>
+</div>
 <!-- Le bandeau `#sift-gate` (racine de bibliothèque non définie) vivait ici, au-dessus de la
      charpente entière. Retiré le 2026-09-02 (issue #54) : la racine n'est plus un prérequis de la
      conversion — on convertit en place ou vers un dossier externe sans en avoir aucune — donc un

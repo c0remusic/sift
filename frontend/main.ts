@@ -47,6 +47,7 @@ import { installRouter } from "./router";
 import { installUpdateBanner } from "./updater";
 import { installAsideResize } from "./toolbar";
 import { initLang } from "./lang-boot";
+import { lancerLancement } from "./lancement";
 import { platform } from "@tauri-apps/plugin-os";
 import { installMacosMenu } from "./macos-menu";
 
@@ -62,9 +63,15 @@ const inTauri =
 // fournissait à la production ; elle redevient ce qu'elle est, une démo navigateur, et ses
 // gardes `inTauri` y sont désormais toujours faux — elle rend donc enfin sa maquette complète.
 // Import dynamique : Vite l'élimine ainsi du chemin de démarrage de l'app de bureau.
-if (!inTauri) void import("./app.js");
+if (!inTauri) {
+  document.getElementById("sift-lancement")?.remove();
+  void import("./app.js");
+}
 
-if (inTauri) void boot();
+if (inTauri) {
+  void lancerLancement();
+  void boot();
+}
 
 /** Même lecture que la barre de titre (`chrome.ts`) : un `platform()` qui lève vaut Windows. */
 function isMacos(): boolean {

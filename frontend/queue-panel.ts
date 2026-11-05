@@ -9,6 +9,7 @@
 // décision du wireframe « Poste de décision »). Le mode Lot s'arme désormais par l'icône de
 // sélection de la barre unifiée. Ne pas réintroduire d'onglet de mode dans #qcol.
 import { listQueue, reanalyzeTracks, revealTrack } from "./ipc";
+import { appPrete } from "./lancement";
 import { openFilingInto, syncDetail } from "./filing";
 import { refreshBins, clearBinPick } from "./filing-bins";
 import { registerQueueAdvance } from "./filing-actions";
@@ -953,6 +954,7 @@ export async function renderQueue(touchDetail = true) {
   // filtre. `source_id` existe déjà dans le contrat : aucun aller-retour backend n'est ajouté.
   if (queueSourceFilter != null) items = items.filter((it) => it.source_id === queueSourceFilter);
   currentItems = items;
+  appPrete();
   // This IS the fresh delivery the stale flag was waiting for, and the single point where the
   // front takes the queue in — so it is also where the badge is brought back in step with the rail.
   queueCacheStale = false;

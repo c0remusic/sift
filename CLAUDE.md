@@ -349,6 +349,8 @@ le vrai rendu, importé par `rail-sources.ts`) · `rails.ts` (miroir frontend un
 `tags::rail_from_ext`) · `seg-thumb.ts` (pouce de contrôle segmenté partagé, ex-six copies) ·
 `styles.css`.
 
+`lancement.ts` : l'animation du lancement, spec `docs/ui-specs/lancement.md`.
+
 `dev-inspector.ts` + `dev-annotate.ts` forment l'outil d'annotation **Alt+Clic**
 (dev-only) : cadre de sélection, localisation du source via `locate_source`, note libre
 envoyée par `save_annotation` qui append `docs/annotations.jsonl`.
@@ -393,8 +395,8 @@ envoyée par `save_annotation` qui append `docs/annotations.jsonl`.
   la frontière IPC. Le projet n'utilise **pas** `thiserror`/`anyhow` — c'est un choix,
   pas un défaut ; ne pas les introduire sans le signaler.
 - **`unwrap()`/`expect()` hors `#[cfg(test)]` = interdit dur.**
-- **6 blocs `unsafe` en production**, tous avec leur `// SAFETY:` (recomptés le 2026-09-16) :
-  deux dans `lib.rs` (`DwmExtendFrameIntoClientArea`, titlebar Win32 ; `DwmSetWindowAttribute`,
+- **13 blocs `unsafe` en production**, tous avec leur `// SAFETY:` (recomptés le 2026-11-05) :
+  `lancement_natif.rs` (fenêtre du lancement, 7 blocs, plus sa `procedure`), deux dans `lib.rs` (`DwmExtendFrameIntoClientArea`, titlebar Win32 ; `DwmSetWindowAttribute`,
   coins arrondis #41), **trois dans `usb_format/raw_volume.rs`** (handles Win32 sur volume
   brut), et **un dans `worker.rs`** (`SetThreadPriority`, abaissement des fils du pool
   d'analyse sous la boucle de messages de la fenêtre). Trois autres vivent dans le `mod tests`
@@ -420,6 +422,7 @@ garde leurs tests exécutables sur n'importe quelle machine) ·
 sans ré-analyse, pour toute ligne à `verdict_ver` périmée) ·
 `filing.rs` / `actions.rs` / `encode.rs` / `naming.rs` / `tagging.rs` (rangement) ·
 `audio_stream.rs` + `aiff_wav.rs` (protocole `sift-audio:`, AIFF servi en flux au lecteur) ·
+`lancement_natif.rs` (fenêtre Win32 du mark, avant WebView2) ·
 `dedup.rs` / `fingerprint.rs` / `doublons.rs` (groupes de l'écran Doublons : trois relations,
 règle de la copie gardée, À vérifier) · `library.rs` / `ecartes.rs` / `genres.rs` ·
 `rekordbox_xml.rs` / `rekordbox_masterdb.rs` / `rekordbox_repairs.rs` (M8 Tier 1/2/3) /

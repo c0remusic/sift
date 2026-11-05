@@ -30,6 +30,7 @@ mod ipc_identify;
 mod ipc_library;
 mod ipc_usage;
 mod ipc_usb;
+mod lancement_natif;
 mod library;
 mod metadata;
 mod naming;
@@ -279,8 +280,17 @@ pub fn run() {
                 let _ = w.set_focus();
             }
         }))
+        .plugin(lancement_natif::plugin())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // Sans VISIBLE : `main` reste cachée jusqu'à `lancement_peint`, sinon le plugin la montre vide.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        & !tauri_plugin_window_state::StateFlags::VISIBLE,
+                )
+                .build(),
+        )
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
         .manage(audio_stream::FluxAutorises::default())
@@ -416,6 +426,7 @@ pub fn run() {
             ipc::import_paths,
             ipc::open_url,
             ipc::playback_url,
+            lancement_natif::lancement_peint,
             ipc_filing::reconcile,
             ipc_filing::preview_filename,
             ipc_filing::track_release,
@@ -616,6 +627,7 @@ mod commandes_tests {
             include_str!("ipc_library.rs"),
             include_str!("ipc_usage.rs"),
             include_str!("ipc_usb.rs"),
+            include_str!("lancement_natif.rs"),
         ]
     }
 

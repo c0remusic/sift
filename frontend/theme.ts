@@ -11,6 +11,13 @@ const THEME_SETTING = "ui_theme";
 function apply(choice: ThemeChoice): void {
   if (choice === "auto") delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = choice;
+  // Copie pour le script de tête d'`index.html`, qui passe avant tout IPC. Stockage indisponible :
+  // le lancement suit alors le système, le thème de l'app reste juste.
+  try {
+    localStorage.setItem("sift_theme", choice);
+  } catch (e) {
+    console.warn("sift_theme non mémorisé", e);
+  }
 }
 
 /** Read the persisted choice (default "auto") and apply it. Call once at boot. */

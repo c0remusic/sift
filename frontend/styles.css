@@ -526,6 +526,19 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--color-background
    DECORATED window, not this undecorated one) — the real fix needs WndProc-level WM_NCCALCSIZE
    handling, judged too invasive for this. Plain rectangular window instead. */
 html{background:transparent}
+/* Lancement (`lancement.ts`, variante C′ du ticket #90). Le mark vaut 18vw et son centre est celui
+   de la fenêtre : `lancement_natif.rs` peint exactement ça avant que la page existe, et les
+   couleurs y sont copiées (`test/lancement-couleurs.test.ts`). 5.94vw : le demi-côté du vert. */
+#sift-lancement{position:fixed;inset:0;z-index:calc(var(--z-modal) + 1);background:var(--color-background-tertiary)}
+.sift-lance-mark{position:absolute;left:50%;top:50%;width:18vw;height:18vw;transform:translate(-50%,-50%);overflow:visible}
+.sift-lance-ambre,.sift-lance-vert{transform-box:fill-box;transform-origin:center}
+.sift-lance-ambre rect{fill:none;stroke:var(--color-hue-orange-solid)}
+.sift-lance-vert rect{fill:var(--color-hue-green-solid)}
+.sift-lance-nom{position:absolute;left:0;right:0;top:calc(50% + 5.94vw + 1.6vw);text-align:center;font-family:var(--font-ui);font-size:7.2vw;line-height:1;font-weight:600;color:var(--color-text-primary);opacity:0}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sift-lance-ambre rect{stroke:var(--color-text-warning)}
+:root:not([data-theme="light"]) .sift-lance-vert rect{fill:var(--color-text-success)}}
+:root[data-theme="dark"] .sift-lance-ambre rect{stroke:var(--color-text-warning)}
+:root[data-theme="dark"] .sift-lance-vert rect{fill:var(--color-text-success)}
 /* Seamless themed scrollbars: thin, transparent track, subtle inset thumb (transparent
    border + padding-box clip makes it float off the edge), brighter on hover. */
 *{scrollbar-width:thin;scrollbar-color:transparent transparent}
