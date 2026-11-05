@@ -4,8 +4,8 @@
 // Bibliothèque par `library-detail.ts`. La variante modale (`openReportModal`) a été retirée le
 // 2026-09-16 (c5f64d1) ; le repli « tout dans le scroll du rapport », lui, servait Bibliothèque
 // jusqu'à son propre slot `.lib-diag` (2026-09-08) et part ici.
-import { analyzePath } from "./ipc";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { analyzePath, playbackSource, playbackSrc } from "./ipc";
+import { invoke } from "@tauri-apps/api/core";
 import WaveSurfer from "wavesurfer.js";
 import type { AnalysisReport } from "../shared/contracts";
 import { FILE_GONE } from "../shared/contracts";
@@ -594,8 +594,8 @@ export function audioBufferToWav(buf: AudioBuffer): Blob {
 }
 
 /** Resolve a URL the webview's media element can play directly: the file itself for the
- * formats Chromium decodes natively (mp3/wav/flac/m4a/ogg), or the backend's cached WAV
- * transcode for AIFF (`playback_url`, mtime-guarded temp file, re-encoded only when stale).
+ * formats Chromium decodes natively (mp3/wav/flac/m4a/ogg), the `sift-audio:` stream for AIFF,
+ * or the backend's cached WAV transcode for ALAC (`playback_url`, mtime-guarded temp file).
  * The old path here fetched the WHOLE file into an ArrayBuffer, decoded it fully with Web
  * Audio, then re-encoded a 40-80MB WAV blob sample-by-sample in JS — for every format, on
  * every cache-miss open. The media element streams instead; with pre-computed peaks passed
@@ -606,7 +606,7 @@ export function audioBufferToWav(buf: AudioBuffer): Blob {
  * `path` directly here would yield a URL the webview is forbidden to fetch. The extra IPC costs
  * one round-trip per track opened — nothing next to loading the audio itself. */
 async function playableUrl(path: string): Promise<string> {
-  return invoke<string>("playback_url", { path });
+  return playbackSrc(await playbackSource(path));
 }
 
 /** Point the player's media element at the track (streaming, no up-front decode). `peaks`/
@@ -618,7 +618,7 @@ async function loadAudio(ws: WaveSurfer, path: string, peaks?: number[], duratio
   try {
     const src = await playableUrl(path);
     if (ws !== currentWs) return;
-    await ws.load(convertFileSrc(src), peaks?.length ? [peaks] : undefined, duration || undefined);
+    await ws.load(src, peaks?.length ? [peaks] : undefined, duration || undefined);
   } catch (e) {
     if (ws !== currentWs) return; // AbortError from a track switch mid-load: expected, silent
     console.error("audio load failed", e);
@@ -627,7 +627,7 @@ async function loadAudio(ws: WaveSurfer, path: string, peaks?: number[], duratio
 
 /** Warm everything the NEXT track's open needs, so queue navigation feels instant: the
  * analysis report (verdict + peaks — a DB hit when the worker already analyzed it) and,
- * for AIFF, the backend's transcoded WAV. Failures are silent by design: a prefetch must
+ * for ALAC, the backend's transcoded WAV. An AIFF needs nothing: it streams on demand. Failures are silent by design: a prefetch must
  * never surface UI errors — the real open retries and reports. Called from the queue-open
  * sites at most once per user track-switch (not a burst event). */
 export function prefetchTrack(path: string): void {
@@ -637,10 +637,9 @@ export function prefetchTrack(path: string): void {
       .catch(() => {});
   }
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  // `m4a` aussi : de l'ALAC y passe par le même WAV temporaire (`ipc.rs::webview_needs_wav`), et
-  // le backend seul sait le distinguer d'un AAC, qu'il sert alors tel quel sans rien encoder.
-  if (ext === "aif" || ext === "aiff" || ext === "m4a")
-    void invoke<string>("playback_url", { path }).catch(() => {});
+  // De l'ALAC passe par un WAV temporaire (`ipc.rs::webview_needs_wav`), et le backend seul sait le
+  // distinguer d'un AAC, qu'il sert alors tel quel sans rien encoder.
+  if (ext === "m4a") void playbackSource(path).catch(() => {});
 }
 
 /** Mounts a wavesurfer player on the report's player row. Tempo uses the browser's native

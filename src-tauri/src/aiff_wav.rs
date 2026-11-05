@@ -1,17 +1,13 @@
-//! AIFF / AIFF-C non compressé → WAV, sans ffmpeg, pour la LECTURE (`ipc::playback_url`).
+//! AIFF / AIFF-C non compressé vu comme un WAV, sans ffmpeg, pour la LECTURE (`audio_stream`).
 //!
-//! Le webview (Chromium) ne lit pas l'AIFF : chaque AIFF écouté passait par un transcodage ffmpeg
-//! complet vers un WAV 16 bits / 44,1 kHz avant de pouvoir jouer. Mesuré le 2026-10-30 dans la
-//! vraie fenêtre : 0,4 à 0,9 s d'attente sur une piste jamais écoutée. Or un AIFF n'est que du PCM
-//! gros-boutiste dans des chunks IFF, et un WAV du PCM petit-boutiste dans des chunks RIFF : la
-//! conversion est un réécrivage d'en-tête et une inversion d'octets par échantillon, en un seul
-//! passage de lecture-écriture, sans décodage ni rééchantillonnage. Le format d'origine (taux,
-//! profondeur, canaux) est gardé tel quel.
+//! Le webview (Chromium) ne lit pas l'AIFF. Or un AIFF n'est que du PCM gros-boutiste dans des
+//! chunks IFF, et un WAV du PCM petit-boutiste dans des chunks RIFF : un en-tête et une inversion
+//! d'octets par échantillon suffisent, sans décodage ni rééchantillonnage, et cela se fait à la
+//! lecture de chaque plage. Le format d'origine (taux, profondeur, canaux) est gardé tel quel.
 //!
-//! Hors périmètre, rendu en `Err` pour que l'appelant retombe sur ffmpeg : AIFF-C compressé (tout
+//! Hors périmètre, rendu en `Err` pour que `ipc::playback_url` retombe sur ffmpeg : AIFF-C compressé (tout
 //! type autre que `NONE` et `sowt`), échantillons flottants (`fl32`, `fl64`), fichier mal formé.
-use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::io::{Read, Seek, SeekFrom};
 
 /// Ce que dit le chunk COMM, plus l'emplacement des échantillons dans SSND.
 #[derive(Debug, PartialEq)]
@@ -126,73 +122,114 @@ fn analyser(f: &mut (impl Read + Seek)) -> Result<Pcm, String> {
     })
 }
 
-/// Convertit `src` (AIFF ou AIFF-C non compressé) en WAV PCM dans `dst`. Au moindre écart du
-/// périmètre, `Err` et `dst` n'est pas laissé à moitié écrit.
-pub fn convertir(src: &Path, dst: &Path) -> Result<(), String> {
-    let mut entree = BufReader::new(std::fs::File::open(src).map_err(|e| e.to_string())?);
-    let pcm = analyser(&mut entree)?;
+/// Taille de l'en-tête WAV écrit par [`Flux::lire`].
+const ENTETE: u64 = 44;
+
+/// Un AIFF vu comme un WAV : une suite d'octets adressable, calculée à la lecture.
+#[derive(Debug)]
+pub struct Flux {
+    pcm: Pcm,
+    octets_ech: usize,
+    /// Octets d'échantillons servis, en trames entières.
+    octets: u64,
+}
+
+/// Prépare le flux d'un AIFF ou AIFF-C non compressé. Au moindre écart du périmètre, `Err`.
+pub fn ouvrir(f: &mut (impl Read + Seek)) -> Result<Flux, String> {
+    let pcm = analyser(f)?;
     let octets_ech = usize::from(pcm.bits.div_ceil(8));
     let bloc = octets_ech * usize::from(pcm.canaux);
     let attendu = u64::from(pcm.trames) * bloc as u64;
     // Un SSND plus court que COMM ne l'annonce (fichier tronqué) : on sert ce qui existe.
     let octets = attendu.min(pcm.octets) / bloc as u64 * bloc as u64;
-    if octets > u64::from(u32::MAX) - 44 {
+    if octets > u64::from(u32::MAX) - ENTETE {
         return Err("AIFF trop long pour un WAV".into());
     }
-    entree
-        .seek(SeekFrom::Start(pcm.debut))
-        .map_err(|e| e.to_string())?;
+    Ok(Flux {
+        pcm,
+        octets_ech,
+        octets,
+    })
+}
 
-    let mut ecrire = || -> Result<(), String> {
-        let mut sortie = BufWriter::new(std::fs::File::create(dst).map_err(|e| e.to_string())?);
-        let io = |e: std::io::Error| e.to_string();
-        let taux_octets = pcm.taux * bloc as u32;
-        let mut h = Vec::with_capacity(44);
+impl Flux {
+    /// Taille du WAV vu par le lecteur, en octets.
+    pub fn taille(&self) -> u64 {
+        ENTETE + self.octets
+    }
+
+    fn entete(&self) -> Vec<u8> {
+        let bloc = self.octets_ech * usize::from(self.pcm.canaux);
+        let taux_octets = self.pcm.taux * bloc as u32;
+        let mut h = Vec::with_capacity(ENTETE as usize);
         h.extend_from_slice(b"RIFF");
-        h.extend_from_slice(&(36 + octets as u32).to_le_bytes());
+        h.extend_from_slice(&(36 + self.octets as u32).to_le_bytes());
         h.extend_from_slice(b"WAVEfmt ");
         h.extend_from_slice(&16u32.to_le_bytes());
         h.extend_from_slice(&1u16.to_le_bytes()); // WAVE_FORMAT_PCM
-        h.extend_from_slice(&pcm.canaux.to_le_bytes());
-        h.extend_from_slice(&pcm.taux.to_le_bytes());
+        h.extend_from_slice(&self.pcm.canaux.to_le_bytes());
+        h.extend_from_slice(&self.pcm.taux.to_le_bytes());
         h.extend_from_slice(&taux_octets.to_le_bytes());
         h.extend_from_slice(&(bloc as u16).to_le_bytes());
-        h.extend_from_slice(&((octets_ech * 8) as u16).to_le_bytes());
+        h.extend_from_slice(&((self.octets_ech * 8) as u16).to_le_bytes());
         h.extend_from_slice(b"data");
-        h.extend_from_slice(&(octets as u32).to_le_bytes());
-        sortie.write_all(&h).map_err(io)?;
+        h.extend_from_slice(&(self.octets as u32).to_le_bytes());
+        h
+    }
 
-        let mut tampon = vec![0u8; (64 * 1024 / bloc).max(1) * bloc];
-        let mut reste = octets;
-        while reste > 0 {
-            let n = (tampon.len() as u64).min(reste) as usize;
-            entree.read_exact(&mut tampon[..n]).map_err(io)?;
-            for e in tampon[..n].chunks_exact_mut(octets_ech) {
-                if !pcm.petit_boutiste {
+    /// Lit `n` octets du WAV à partir de `debut`, tronqués à sa fin. Une plage peut commencer au
+    /// milieu d'un échantillon : les échantillons entiers sont lus, puis la plage y est découpée.
+    pub fn lire(
+        &self,
+        f: &mut (impl Read + Seek),
+        debut: u64,
+        n: usize,
+    ) -> Result<Vec<u8>, String> {
+        let fin = (debut + n as u64).min(self.taille());
+        let mut sortie = Vec::with_capacity(n);
+        if debut < ENTETE {
+            sortie.extend_from_slice(&self.entete()[debut as usize..fin.min(ENTETE) as usize]);
+        }
+        if fin > ENTETE {
+            let de = debut.max(ENTETE) - ENTETE;
+            let a = fin - ENTETE;
+            let ech = self.octets_ech as u64;
+            let premier = de / ech * ech;
+            let dernier = a.div_ceil(ech) * ech;
+            let mut tampon = vec![0u8; (dernier - premier) as usize];
+            f.seek(SeekFrom::Start(self.pcm.debut + premier))
+                .map_err(|e| e.to_string())?;
+            f.read_exact(&mut tampon).map_err(|e| e.to_string())?;
+            for e in tampon.chunks_exact_mut(self.octets_ech) {
+                if !self.pcm.petit_boutiste {
                     e.reverse();
                 }
                 // 8 bits : signé en AIFF, non signé en WAV.
-                if octets_ech == 1 {
+                if self.octets_ech == 1 {
                     e[0] ^= 0x80;
                 }
             }
-            sortie.write_all(&tampon[..n]).map_err(io)?;
-            reste -= n as u64;
+            sortie.extend_from_slice(&tampon[(de - premier) as usize..(a - premier) as usize]);
         }
-        sortie.flush().map_err(io)
-    };
-    ecrire().inspect_err(|_| {
-        let _ = std::fs::remove_file(dst);
-    })
+        Ok(sortie)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     fn fixture(name: &str) -> Option<String> {
         let p = format!("fixtures/{name}");
         std::path::Path::new(&p).exists().then_some(p)
+    }
+
+    fn convertir(src: &Path, dst: &Path) -> Result<(), String> {
+        let mut f = std::fs::File::open(src).map_err(|e| e.to_string())?;
+        let flux = ouvrir(&mut f)?;
+        let tout = flux.lire(&mut f, 0, flux.taille() as usize)?;
+        std::fs::write(dst, tout).map_err(|e| e.to_string())
     }
 
     fn pcm_de(chemin: &str) -> Vec<f32> {
@@ -234,30 +271,6 @@ mod tests {
             taux_80_bits(&[0x40, 0x0E, 0xBB, 0x80, 0, 0, 0, 0, 0, 0]),
             48_000
         );
-    }
-
-    /// Banc : réécriture directe contre ffmpeg sur un vrai fichier (`SIFT_AIFF_BANC`), fichier
-    /// chaud (lu une fois avant). `cargo test --release -- --ignored banc_aiff --nocapture`.
-    #[test]
-    #[ignore]
-    fn banc_aiff_direct_contre_ffmpeg() {
-        let Ok(src) = std::env::var("SIFT_AIFF_BANC") else {
-            eprintln!("skip: SIFT_AIFF_BANC non posé");
-            return;
-        };
-        let _ = std::fs::read(&src).unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let t = std::time::Instant::now();
-        convertir(Path::new(&src), &dir.path().join("direct.wav")).unwrap();
-        let direct = t.elapsed();
-        let t = std::time::Instant::now();
-        crate::encode::encode(
-            &src,
-            dir.path().join("ffmpeg.wav").to_str().unwrap(),
-            crate::encode::Target::Wav1644,
-        )
-        .unwrap();
-        eprintln!("direct {direct:?} · ffmpeg {:?}", t.elapsed());
     }
 
     /// Un fichier hors périmètre rend Err et ne laisse aucune sortie.

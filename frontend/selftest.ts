@@ -5,9 +5,9 @@
 // and logging OK/FAIL per file to the Rust log via report_smoke (readable from the dev
 // server output). Trigger automatically with VITE_SIFT_SELFTEST=1, or from devtools via
 // window.__siftSelfTest().
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import WaveSurfer from "wavesurfer.js";
-import { listQueue, analyzePath } from "./ipc";
+import { listQueue, analyzePath, playbackSource, playbackSrc } from "./ipc";
 import { audioBufferToWav } from "./report-view";
 
 const log = (ok: boolean, detail: string) => void invoke("report_smoke", { ok, detail });
@@ -44,10 +44,9 @@ export async function runSelfTest(limit = 15): Promise<void> {
       const r = await analyzePath(it.path, false);
       const tAna = performance.now();
       // Through `playback_url` like the real player: the `asset:` scope starts empty, so a raw
-      // `convertFileSrc(it.path)` is a URL the webview is not allowed to fetch. Mirroring the
+      // asset URL is a URL the webview is not allowed to fetch. Mirroring the
       // player means mirroring how it earns that access, not just how it decodes.
-      const playable = await invoke<string>("playback_url", { path: it.path });
-      const resp = await fetch(convertFileSrc(playable));
+      const resp = await fetch(playbackSrc(await playbackSource(it.path)));
       if (!resp.ok) throw new Error(`fetch ${resp.status}`);
       const arr = await resp.arrayBuffer();
       const tFetch = performance.now();

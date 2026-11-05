@@ -419,6 +419,7 @@ garde leurs tests exécutables sur n'importe quelle machine) ·
 `reverdict.rs` (passe de re-verdict au démarrage : rejoue le verdict sur les mesures déjà stockées,
 sans ré-analyse, pour toute ligne à `verdict_ver` périmée) ·
 `filing.rs` / `actions.rs` / `encode.rs` / `naming.rs` / `tagging.rs` (rangement) ·
+`audio_stream.rs` + `aiff_wav.rs` (protocole `sift-audio:`, AIFF servi en flux au lecteur) ·
 `dedup.rs` / `fingerprint.rs` / `doublons.rs` (groupes de l'écran Doublons : trois relations,
 règle de la copie gardée, À vérifier) · `library.rs` / `ecartes.rs` / `genres.rs` ·
 `rekordbox_xml.rs` / `rekordbox_masterdb.rs` / `rekordbox_repairs.rs` (M8 Tier 1/2/3) /

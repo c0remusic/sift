@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppInfo,
@@ -8,6 +8,7 @@ import type {
   ScanDone,
   AnalysisReport,
   AnalysisProgress,
+  PlaybackSource,
   Canonical,
   IdentifyHint,
   AppliedRelease,
@@ -56,6 +57,11 @@ export const listSources = (): Promise<Source[]> => invoke("list_sources");
 export const removeSource = (id: number): Promise<void> =>
   invoke("remove_source", { id });
 export const listQueue = (): Promise<QueueItem[]> => invoke("list_queue");
+export const playbackSource = (path: string): Promise<PlaybackSource> =>
+  invoke("playback_url", { path });
+/** URL du lecteur. Le protocole `sift-audio` est celui de `audio_stream.rs`. */
+export const playbackSrc = (s: PlaybackSource): string =>
+  convertFileSrc(s.path, s.stream ? "sift-audio" : "asset");
 export const reanalyzeTracks = (trackIds: number[]): Promise<number> =>
   invoke("reanalyze_tracks", { trackIds });
 export const rescanSource = (id: number): Promise<void> =>

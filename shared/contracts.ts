@@ -150,6 +150,13 @@ export interface QueueItem {
   is_new: boolean;
 }
 
+/** Source du lecteur (`ipc.rs::PlaybackSource`, `playback_source_shape_matches_contracts_ts`).
+ *  `stream` : AIFF servi à la volée par `sift-audio:`, sinon fichier lisible par `asset:`. */
+export interface PlaybackSource {
+  path: string;
+  stream: boolean;
+}
+
 /** Fin d'un scan de dossier source (`ipc.rs::spawn_scans`, événement `scan:done`). `startup` :
  *  le scan de rattrapage lancé à l'ouverture de l'app, et non un « Rescanner » demandé. */
 export interface ScanDone {

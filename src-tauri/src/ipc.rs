@@ -635,9 +635,10 @@ fn webview_needs_wav(path: &str, ext: &str) -> bool {
 
 /// Return a filesystem path the webview's audio engine can actually play, AND grant the asset
 /// protocol read access to exactly that one file. Chromium plays mp3/wav/flac/AAC m4a/ogg
-/// directly, but NOT AIFF nor ALAC — so for those we transcode once to a cached temp WAV and
-/// return that (`webview_needs_wav`).
-/// The caller wraps the result with convertFileSrc.
+/// directly, but NOT AIFF nor ALAC. Un AIFF non compressé part en flux par `sift-audio:`, sans
+/// fichier ni attente (`audio_stream`, issue #91). Le reste (ALAC, AIFF-C compressé, fichier
+/// atypique) passe une fois par un WAV temporaire (`webview_needs_wav`).
+/// Le frontend construit l'URL depuis [`PlaybackSource`] par `ipc.ts::playbackSrc`.
 ///
 /// The `asset:` scope starts EMPTY (`tauri.conf.json`), so this command is the only door for
 /// audio. That is also why it refuses a path the DB doesn't know: without that check it would
@@ -646,11 +647,19 @@ fn webview_needs_wav(path: &str, ext: &str) -> bool {
 /// check narrows the blast radius to files Sift already indexed, which the webview can enumerate
 /// through the normal listing commands anyway.
 #[tauri::command]
-pub async fn playback_url(app: AppHandle, path: String) -> Result<String, String> {
+pub async fn playback_url(app: AppHandle, path: String) -> Result<PlaybackSource, String> {
     hors_du_fil(move || playback_url_bloquant(&app, path)).await
 }
 
-fn playback_url_bloquant(app: &AppHandle, path: String) -> Result<String, String> {
+/// De quoi construire l'URL du lecteur. Miroir de `PlaybackSource` dans `shared/contracts.ts`.
+#[derive(Serialize)]
+pub struct PlaybackSource {
+    pub path: String,
+    /// Vrai : servi par `sift-audio:`. Faux : fichier lisible par `asset:`.
+    pub stream: bool,
+}
+
+fn playback_url_bloquant(app: &AppHandle, path: String) -> Result<PlaybackSource, String> {
     {
         let state = app.state::<Mutex<Connection>>();
         let c = db::lock_conn(&state)?;
@@ -675,7 +684,23 @@ fn playback_url_bloquant(app: &AppHandle, path: String) -> Result<String, String
         app.asset_protocol_scope()
             .allow_file(&path)
             .map_err(|e| e.to_string())?;
-        return Ok(path);
+        return Ok(PlaybackSource {
+            path,
+            stream: false,
+        });
+    }
+    if ext == "aif" || ext == "aiff" {
+        let lisible = std::fs::File::open(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|f| crate::aiff_wav::ouvrir(&mut std::io::BufReader::new(f)).map(|_| ()));
+        match lisible {
+            Ok(()) => {
+                app.state::<crate::audio_stream::FluxAutorises>()
+                    .autoriser(&path)?;
+                return Ok(PlaybackSource { path, stream: true });
+            }
+            Err(e) => log::info!("lecture : AIFF repris par ffmpeg ({e}) : {path}"),
+        }
     }
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -699,35 +724,25 @@ fn playback_url_bloquant(app: &AppHandle, path: String) -> Result<String, String
             let _ = f.set_modified(std::time::SystemTime::now());
         }
     } else {
-        // AIFF : réécriture directe en WAV (`aiff_wav`), un passage de copie sans décodage — le
-        // transcodage ffmpeg coûtait 0,4 à 0,9 s par piste jamais écoutée (mesuré le 2026-10-30).
-        // ffmpeg reste le repli : ALAC, AIFF-C compressé, flottant, fichier atypique.
-        let direct = (ext == "aif" || ext == "aiff")
-            && match crate::aiff_wav::convertir(std::path::Path::new(&path), &out) {
-                Ok(()) => true,
-                Err(e) => {
-                    log::info!("lecture : AIFF repris par ffmpeg ({e}) : {path}");
-                    false
-                }
-            };
-        if !direct {
-            crate::encode::encode(
-                &path,
-                &out.to_string_lossy(),
-                crate::encode::Target::Wav1644,
-            )
-            .map_err(|e| e.to_string())?;
-        }
+        crate::encode::encode(
+            &path,
+            &out.to_string_lossy(),
+            crate::encode::Target::Wav1644,
+        )
+        .map_err(|e| e.to_string())?;
         prune_play_cache(&dir, PLAY_CACHE_MAX_BYTES, Some(&out));
     }
     // The temp WAV, not the source: it is what the webview will actually fetch.
     app.asset_protocol_scope()
         .allow_file(&out)
         .map_err(|e| e.to_string())?;
-    Ok(out.to_string_lossy().to_string())
+    Ok(PlaybackSource {
+        path: out.to_string_lossy().to_string(),
+        stream: false,
+    })
 }
 
-/// Le cache des WAV de lecture (AIFF et ALAC transcodés pour le webview, `playback_url`).
+/// Le cache des WAV de lecture (ALAC et AIFF hors périmètre du flux, transcodés par `playback_url`).
 pub(crate) fn play_cache_dir() -> std::path::PathBuf {
     std::env::temp_dir().join("sift-play")
 }
@@ -1012,6 +1027,18 @@ mod tests {
 
     /// Mirrors `ScanDone` in shared/contracts.ts. Exhaustive destructure (no `..`): fails to compile
     /// if a field is added/removed/renamed, the forcing function to update contracts.ts too.
+    #[test]
+    fn playback_source_shape_matches_contracts_ts() {
+        let PlaybackSource { path, stream } = PlaybackSource {
+            path: "x".into(),
+            stream: true,
+        };
+        assert_eq!(
+            serde_json::to_value(PlaybackSource { path, stream }).unwrap(),
+            serde_json::json!({ "path": "x", "stream": true })
+        );
+    }
+
     #[test]
     fn scan_done_shape_matches_contracts_ts() {
         let ScanDone {

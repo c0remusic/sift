@@ -1,6 +1,7 @@
 mod actions;
 mod aiff_wav;
 pub mod analysis;
+mod audio_stream;
 mod b85_bytes;
 #[cfg(test)]
 mod bench_cpu_budget;
@@ -282,6 +283,14 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
+        .manage(audio_stream::FluxAutorises::default())
+        .register_asynchronous_uri_scheme_protocol(audio_stream::SCHEME, |ctx, requete, reponse| {
+            let app = ctx.app_handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let autorises = app.state::<audio_stream::FluxAutorises>();
+                reponse.respond(audio_stream::repondre(&autorises, &requete));
+            });
+        })
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
