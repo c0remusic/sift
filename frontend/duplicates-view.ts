@@ -50,6 +50,7 @@ import {
   visibleGroups,
   type GroupFilter,
   type Plan,
+  peindreDeMemoire,
 } from "./duplicates-model";
 import {
   consequenceHtml,
@@ -68,6 +69,8 @@ import { T } from "./i18n/duplicates-view";
 // ---------------------------------------------------------------------------
 
 let groups: DupScreenGroup[] = [];
+/** `groups` vient d'une lecture réussie : une liste vide y veut dire « aucun doublon ». */
+let lu = false;
 let plan: Plan = new Map();
 /** Les copies dont l'utilisateur a changé l'Issue : leur choix survit aux relectures des groupes
  *  (`rebasePlan`), indexé par COPIE — l'id d'un groupe change quand sa copie de plus petit id part. */
@@ -826,6 +829,19 @@ function mountShell(content: HTMLElement): void {
   });
 }
 
+/** Première lecture, avant le premier passage (#92). Elle lit des fichiers et la collection
+ *  Rekordbox : `sift-live.ts` la lance après le démarrage. L'échec se tait ici : `lu` reste faux, et
+ *  le passage suivant l'affiche. */
+export async function lireLesDoublonsEnFond(): Promise<void> {
+  if (lu) return;
+  try {
+    [groups, sources] = await Promise.all([listDuplicateGroups(), listSources()]);
+    lu = true;
+  } catch (e) {
+    console.error("list_duplicate_groups failed in the background", e);
+  }
+}
+
 /** `soft` : rafraîchissement venu de `queue:changed` (rafales coalescées à 400 ms : scan, watcher,
  *  rangement, Ctrl+Z). Rien de changé : rien ne se repeint, et l'écoute continue. `keepOpen` : le
  *  groupe ouvert le reste s'il existe encore (sinon la boîte se vide, l'appelant en choisit un). */
@@ -845,12 +861,28 @@ export async function renderDoublons(opts: { soft?: boolean; keepOpen?: boolean 
   if (!mounted && !content.querySelector(".sift-empty-state")) {
     content.innerHTML = `<div class="sift-library-main"><span class="sift-skel sift-skel-line"></span></div>`;
   }
-  let next: DupScreenGroup[];
+  let next = groups;
+  const memoire = peindreDeMemoire({
+    lu,
+    monte: mounted,
+    doux: !!opts.soft,
+    suitUnGeste: opts.keepOpen !== undefined,
+    focus: pendingFocus != null,
+  });
   try {
-    [next, sources] = await Promise.all([listDuplicateGroups(), listSources()]);
-    if (isStaleViewRender(token)) return;
+    if (memoire) {
+      // Le rendu doux qui suit relit, et ne repeint que si les groupes ont changé.
+      setTimeout(() => {
+        if (document.body.dataset.view === "dups" && !applying) void renderDoublons({ soft: true });
+      });
+    } else {
+      [next, sources] = await Promise.all([listDuplicateGroups(), listSources()]);
+      lu = true;
+      if (isStaleViewRender(token)) return;
+    }
   } catch (err) {
     console.error("list_duplicate_groups failed", err);
+    lu = false;
     if (isStaleViewRender(token)) return;
     virtual?.destroy();
     virtual = null;

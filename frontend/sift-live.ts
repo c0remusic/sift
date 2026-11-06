@@ -17,6 +17,7 @@ import {
 } from "./ipc";
 import { installUndoShortcut, installFilingKeys, registerAddSourceAction } from "./filing";
 import { lireLesDisquesEnFond } from "./usb-view";
+import { lireLesDoublonsEnFond } from "./duplicates-view";
 import { refreshBinsForBatch } from "./filing-bins";
 import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
@@ -229,6 +230,9 @@ function purgeTrashConfirmed(): void {
       });
   });
 }
+
+/** La lecture des doublons échantillonne des fichiers (≈ 4 s à la première) : pas pendant le lancement. */
+const DOUBLONS_APRES_DEMARRAGE_MS = 3000;
 
 export function installLiveWiring() {
   registerBatchRenderer(renderBatch);
@@ -631,5 +635,6 @@ export function installLiveWiring() {
   void pushAnalyzeProgress();
   void refresh();
   void lireLesDisquesEnFond();
+  setTimeout(() => void lireLesDoublonsEnFond(), DOUBLONS_APRES_DEMARRAGE_MS);
 }
 

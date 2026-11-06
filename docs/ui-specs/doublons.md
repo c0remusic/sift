@@ -174,7 +174,7 @@ Fermée sur cet écran : la comparaison vit dans la grille.
 
 | État | Rendu |
 |---|---|
-| Calcul des groupes | squelette de file (`.sift-skel-line`), compte vide |
+| Calcul des groupes | squelette de file (`.sift-skel-line`), compte vide. Seulement avant la première lecture, faite 3 s après le démarrage : ensuite l'écran peint sa mémoire, relit en fond et ne repeint que si les groupes ont changé (#92) |
 | Groupe ouvert | la boîte, curseur sur la copie recommandée, Issue remplie par la règle |
 | Issue modifiée | la phrase de conséquence et le libellé du bouton suivent à la frappe |
 | Groupe À vérifier | aucune copie n'est Corbeille par défaut (toutes Gardées) ; la phrase dit « Durées écartées de 1 min 56 — deux versions ? » ; Entrée = « Pas des doublons » |

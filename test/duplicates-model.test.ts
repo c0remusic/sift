@@ -17,6 +17,7 @@ import {
   toggleIssue,
   unverifiedRekordbox,
   visibleGroups,
+  peindreDeMemoire,
 } from "../frontend/duplicates-model";
 import type { DupScreenCopy, DupScreenGroup } from "../shared/contracts";
 
@@ -330,5 +331,21 @@ describe("option B : Issue, conséquence, Lot", () => {
     const sans = lotSummary([g, doute], plan, false);
     expect(sans.copies.map((c) => c.id)).toEqual([2, 3]);
     expect(sans.rekordboxKept).toBe(0);
+  });
+});
+
+describe("peindreDeMemoire", () => {
+  const arrivee = { lu: true, monte: false, doux: false, suitUnGeste: false, focus: false };
+  it("une arrivée sur l'écran peint la mémoire", () => {
+    expect(peindreDeMemoire(arrivee)).toBe(true);
+  });
+  it("rien à peindre tant que rien n'est lu", () => {
+    expect(peindreDeMemoire({ ...arrivee, lu: false })).toBe(false);
+  });
+  it("un écran monté, un rendu doux, un geste ou une venue de Revue relisent d'abord", () => {
+    expect(peindreDeMemoire({ ...arrivee, monte: true })).toBe(false);
+    expect(peindreDeMemoire({ ...arrivee, doux: true })).toBe(false);
+    expect(peindreDeMemoire({ ...arrivee, suitUnGeste: true })).toBe(false);
+    expect(peindreDeMemoire({ ...arrivee, focus: true })).toBe(false);
   });
 });

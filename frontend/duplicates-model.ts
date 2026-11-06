@@ -8,6 +8,19 @@
 import type { DupScreenCopy, DupScreenGroup, RekordboxDoubt } from "../shared/contracts";
 import { railFromExtension } from "./rails";
 
+/** Vrai quand l'arrivée sur l'écran peut peindre les groupes en mémoire et les relire ensuite
+ *  (#92). Un rendu qui suit un geste (`keepOpen`) veut la vérité d'abord, et une venue de Revue
+ *  (`focus`) cherche une copie que la mémoire peut ignorer. */
+export function peindreDeMemoire(e: {
+  lu: boolean;
+  monte: boolean;
+  doux: boolean;
+  suitUnGeste: boolean;
+  focus: boolean;
+}): boolean {
+  return e.lu && !e.monte && !e.doux && !e.suitUnGeste && !e.focus;
+}
+
 /** Pour chaque copie, gardée (`true`) ou non. */
 export type Plan = Map<number, boolean>;
 
