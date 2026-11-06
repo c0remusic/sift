@@ -379,6 +379,7 @@ envoyée par `save_annotation` qui append `docs/annotations.jsonl`.
   - `list_sources`, `list_queue`, `analysis_progress`, `playback_url`, `find_duplicate`,
     `list_ecartes` (2026-11-05, #91), par `ipc::hors_du_fil`. Pendant une analyse, les deux
     premières portaient 69 gels sur 70.
+  - `list_removable_drives` et les cinq lectures de l'écran Rekordbox (2026-11-06, #92).
   **Toute commande neuve qui lit la base ou le disque naît hors du fil** (décision #91). Le test
   `la_liste_des_commandes_synchrones_ne_peut_que_raccourcir` (`lib.rs`) tient en cliquet la liste
   de celles qui restent synchrones.

@@ -428,16 +428,20 @@ fn rekordbox_status_from_disk(path: Option<String>, drift: bool) -> RekordboxLin
 ///
 /// The two settings are read under the lock; the file read + XML parse run after releasing it.
 #[tauri::command]
-pub fn rekordbox_status(conn: State<'_, Mutex<Connection>>) -> Result<RekordboxLinkStatus, String> {
-    let (path, drift) = {
-        let conn = db::lock_conn(&conn)?;
-        (
-            crate::settings::get(&conn, crate::settings::REKORDBOX_XML_PATH)
-                .map_err(|e| e.to_string())?,
-            drift_detected(&conn),
-        )
-    };
-    Ok(rekordbox_status_from_disk(path, drift))
+pub async fn rekordbox_status(app: AppHandle) -> Result<RekordboxLinkStatus, String> {
+    hors_du_fil(move || {
+        let (path, drift) = {
+            let state = app.state::<Mutex<Connection>>();
+            let conn = db::lock_conn(&state)?;
+            (
+                crate::settings::get(&conn, crate::settings::REKORDBOX_XML_PATH)
+                    .map_err(|e| e.to_string())?,
+                drift_detected(&conn),
+            )
+        };
+        Ok(rekordbox_status_from_disk(path, drift))
+    })
+    .await
 }
 
 /// Plain (testable) implementation of `export_rekordbox_xml`.
@@ -490,11 +494,15 @@ pub use crate::rekordbox_repairs::{ApplyRepairOutcome, PendingMasterdbRepair};
 /// Candidate `master.db` path repairs detected so far, excluding ones already `applied` or
 /// `dismissed`.
 #[tauri::command]
-pub fn rekordbox_masterdb_pending_repairs(
-    conn: State<'_, Mutex<Connection>>,
+pub async fn rekordbox_masterdb_pending_repairs(
+    app: AppHandle,
 ) -> Result<Vec<PendingMasterdbRepair>, String> {
-    let conn = db::lock_conn(&conn)?;
-    crate::rekordbox_repairs::pending_repairs_inner(&conn)
+    hors_du_fil(move || {
+        let state = app.state::<Mutex<Connection>>();
+        let conn = db::lock_conn(&state)?;
+        crate::rekordbox_repairs::pending_repairs_inner(&conn)
+    })
+    .await
 }
 
 /// Mark a pending/ambiguous repair as dismissed — it stops appearing in `pending_repairs`.
@@ -609,11 +617,15 @@ pub use crate::rekordbox_repairs::{ApplyMetadataSyncOutcome, PendingMetadataSync
 /// Candidate `master.db` metadata syncs detected so far, excluding ones already `applied` or
 /// `dismissed`.
 #[tauri::command]
-pub fn rekordbox_masterdb_pending_metadata_syncs(
-    conn: State<'_, Mutex<Connection>>,
+pub async fn rekordbox_masterdb_pending_metadata_syncs(
+    app: AppHandle,
 ) -> Result<Vec<PendingMetadataSync>, String> {
-    let conn = db::lock_conn(&conn)?;
-    crate::rekordbox_repairs::pending_metadata_syncs_inner(&conn)
+    hors_du_fil(move || {
+        let state = app.state::<Mutex<Connection>>();
+        let conn = db::lock_conn(&state)?;
+        crate::rekordbox_repairs::pending_metadata_syncs_inner(&conn)
+    })
+    .await
 }
 
 /// Mark a pending/ambiguous metadata sync as dismissed — it stops appearing in
@@ -665,11 +677,15 @@ pub use crate::rekordbox_repairs::PendingArtworkSync;
 /// Candidate `master.db` artwork syncs detected so far, excluding ones already `applied` or
 /// `dismissed`.
 #[tauri::command]
-pub fn rekordbox_masterdb_pending_artwork_syncs(
-    conn: State<'_, Mutex<Connection>>,
+pub async fn rekordbox_masterdb_pending_artwork_syncs(
+    app: AppHandle,
 ) -> Result<Vec<PendingArtworkSync>, String> {
-    let conn = db::lock_conn(&conn)?;
-    crate::rekordbox_repairs::rekordbox_masterdb_pending_artwork_syncs_inner(&conn)
+    hors_du_fil(move || {
+        let state = app.state::<Mutex<Connection>>();
+        let conn = db::lock_conn(&state)?;
+        crate::rekordbox_repairs::rekordbox_masterdb_pending_artwork_syncs_inner(&conn)
+    })
+    .await
 }
 
 /// Mark a pending/ambiguous artwork sync as dismissed.
@@ -726,11 +742,15 @@ pub use crate::rekordbox_repairs::PlaylistDuplicateGroupDto;
 /// something Sift's own actions cause, so there's nothing to detect
 /// mid-filing or store until later review.
 #[tauri::command]
-pub fn rekordbox_masterdb_scan_playlist_duplicates(
-    conn: State<'_, Mutex<Connection>>,
+pub async fn rekordbox_masterdb_scan_playlist_duplicates(
+    app: AppHandle,
 ) -> Result<Vec<PlaylistDuplicateGroupDto>, String> {
-    let conn = db::lock_conn(&conn)?;
-    crate::rekordbox_repairs::scan_playlist_duplicates_inner(&conn)
+    hors_du_fil(move || {
+        let state = app.state::<Mutex<Connection>>();
+        let conn = db::lock_conn(&state)?;
+        crate::rekordbox_repairs::scan_playlist_duplicates_inner(&conn)
+    })
+    .await
 }
 
 /// Removes every extra occurrence in `group.remove` from the linked

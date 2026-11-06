@@ -390,8 +390,8 @@ function headHtml(s: RekordboxLinkStatus, totalPending: number): string {
 export async function renderRekordboxLive(): Promise<void> {
   const content = requireEl("#content", "renderRekordboxLive");
   // Jeton capturé dans le même geste que `#content` (issue #42). Cet écran est le plus exposé de
-  // tous : CINQ allers-retours IPC séquentiels avant sa première écriture complète, chacun bloqué
-  // par le `Mutex<Connection>` que le scan tient en rafale.
+  // tous : CINQ allers-retours IPC avant sa première écriture complète, chacun bloqué par le
+  // `Mutex<Connection>` que le scan tient en rafale.
   const token = viewEpoch();
   // Squelette statique au premier passage (DESIGN.md § 6). Un re-rendu garde l'écran précédent.
   if (!content.querySelector(".sift-rkb-layout, .sift-empty-state")) {
@@ -399,6 +399,20 @@ export async function renderRekordboxLive(): Promise<void> {
       `<div class="sift-rkb-layout"><nav class="sift-rkb-side"></nav>` +
       `<div class="sift-rkb-main"><span class="sift-skel sift-skel-line"></span></div></div>`;
   }
+  // Les cinq partent ensemble (#92) : le statut relit tout le XML, et rien n'a à l'attendre. Une
+  // section en erreur attend le statut pour se dire : sans XML lié, elle n'a rien à signaler.
+  const echecs: Array<[string, unknown]> = [];
+  const lire = <V>(nom: string, appel: () => Promise<V>): Promise<V | null> =>
+    appel().catch((e: unknown) => {
+      echecs.push([nom, e]);
+      return null;
+    });
+  const releve = Promise.all([
+    lire("rekordbox_masterdb_pending_repairs", rekordboxMasterdbPendingRepairs),
+    lire("rekordbox_masterdb_scan_playlist_duplicates", rekordboxMasterdbScanPlaylistDuplicates),
+    lire("rekordbox_masterdb_pending_metadata_syncs", rekordboxMasterdbPendingMetadataSyncs),
+    lire("rekordbox_masterdb_pending_artwork_syncs", rekordboxMasterdbPendingArtworkSyncs),
+  ]);
   let status: RekordboxLinkStatus;
   try {
     status = await rekordboxStatus();
@@ -427,27 +441,9 @@ export async function renderRekordboxLive(): Promise<void> {
   // Le relevé : quatre appels, un `null` pour une section tombée. Impasse A14 (issue #15) : une
   // section en erreur se COMPTE (`failedSections`, dans `paintRekordbox`) — quatre sections en
   // erreur donnaient un total de 0 et une tête « à jour ».
-  const next: typeof fetched = { repairs: null, metas: null, arts: null, dedups: null };
-  try {
-    next.repairs = await rekordboxMasterdbPendingRepairs();
-  } catch (e) {
-    console.error("rekordbox_masterdb_pending_repairs failed", e);
-  }
-  try {
-    next.dedups = await rekordboxMasterdbScanPlaylistDuplicates();
-  } catch (e) {
-    console.error("rekordbox_masterdb_scan_playlist_duplicates failed", e);
-  }
-  try {
-    next.metas = await rekordboxMasterdbPendingMetadataSyncs();
-  } catch (e) {
-    console.error("rekordbox_masterdb_pending_metadata_syncs failed", e);
-  }
-  try {
-    next.arts = await rekordboxMasterdbPendingArtworkSyncs();
-  } catch (e) {
-    console.error("rekordbox_masterdb_pending_artwork_syncs failed", e);
-  }
+  const [repairs, dedups, metas, arts] = await releve;
+  for (const [nom, e] of echecs) console.error(`${nom} failed`, e);
+  const next: typeof fetched = { repairs, metas, arts, dedups };
   if (isStaleViewRender(token)) return;
   fetched = next;
   lastScannedDuplicateGroups = next.dedups ?? [];
