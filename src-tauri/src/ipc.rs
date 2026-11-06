@@ -122,9 +122,35 @@ pub fn remove_source(
     Ok(())
 }
 
+/// La dernière file livrée au frontend : ce contre quoi `queue_delta` calcule (#92).
+#[derive(Default)]
+pub struct FileLivree(Mutex<Vec<queue::QueueItem>>);
+
 #[tauri::command]
 pub async fn list_queue(app: AppHandle) -> Result<Vec<queue::QueueItem>, String> {
-    hors_du_fil(move || list_queue_bloquant(&app)).await
+    hors_du_fil(move || {
+        let state = app.state::<FileLivree>();
+        let mut livree = state.0.lock().map_err(|e| e.to_string())?;
+        let items = list_queue_bloquant(&app)?;
+        livree.clone_from(&items);
+        Ok(items)
+    })
+    .await
+}
+
+/// Les lignes changées depuis la dernière livraison. La file entière pèse 3 Mo, et elle partait à
+/// chaque battement d'une analyse.
+#[tauri::command]
+pub async fn queue_delta(app: AppHandle) -> Result<queue::QueueDelta, String> {
+    hors_du_fil(move || {
+        let state = app.state::<FileLivree>();
+        let mut livree = state.0.lock().map_err(|e| e.to_string())?;
+        let courante = list_queue_bloquant(&app)?;
+        let delta = queue::delta(&livree, courante.clone());
+        *livree = courante;
+        Ok(delta)
+    })
+    .await
 }
 
 fn list_queue_bloquant(app: &AppHandle) -> Result<Vec<queue::QueueItem>, String> {
@@ -1007,6 +1033,7 @@ mod tests {
         for (source, nom) in [
             (source, "list_sources"),
             (source, "list_queue"),
+            (source, "queue_delta"),
             (source, "analysis_progress"),
             (source, "playback_url"),
             (filing, "find_duplicate"),

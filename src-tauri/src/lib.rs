@@ -294,6 +294,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
         .manage(audio_stream::FluxAutorises::default())
+        .manage(ipc::FileLivree::default())
         .register_asynchronous_uri_scheme_protocol(audio_stream::SCHEME, |ctx, requete, reponse| {
             let app = ctx.app_handle().clone();
             tauri::async_runtime::spawn_blocking(move || {
@@ -417,6 +418,7 @@ pub fn run() {
             ipc::list_sources,
             ipc::remove_source,
             ipc::list_queue,
+            ipc::queue_delta,
             ipc::rescan_source,
             ipc::set_source_watched,
             ipc::set_source_color,

@@ -1,10 +1,10 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { creerLecteurDeFile } from "./queue-delta";
 import type {
   AppInfo,
   DbHealth,
   Source,
-  QueueItem,
   ScanDone,
   AnalysisReport,
   AnalysisProgress,
@@ -57,7 +57,12 @@ export const addSource = (path: string): Promise<Source> =>
 export const listSources = (): Promise<Source[]> => invoke("list_sources");
 export const removeSource = (id: number): Promise<void> =>
   invoke("remove_source", { id });
-export const listQueue = (): Promise<QueueItem[]> => invoke("list_queue");
+/** La file à jour. Le premier appel la lit en entier, les suivants n'en reçoivent que les lignes
+ *  changées. Rendue telle que tenue en mémoire : ne pas la muter. */
+export const listQueue = creerLecteurDeFile(
+  () => invoke("list_queue"),
+  () => invoke("queue_delta"),
+);
 export const playbackSource = (path: string): Promise<PlaybackSource> =>
   invoke("playback_url", { path });
 /** URL du lecteur. Le protocole `sift-audio` est celui de `audio_stream.rs`. */

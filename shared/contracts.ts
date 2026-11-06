@@ -150,6 +150,13 @@ export interface QueueItem {
   is_new: boolean;
 }
 
+/** Lignes changées depuis la dernière livraison (`queue.rs::QueueDelta`,
+ *  `queue_delta_shape_matches_contracts_ts`). */
+export interface QueueDelta {
+  upserted: QueueItem[];
+  removed: number[];
+}
+
 /** Source du lecteur (`ipc.rs::PlaybackSource`, `playback_source_shape_matches_contracts_ts`).
  *  `stream` : AIFF servi à la volée par `sift-audio:`, sinon fichier lisible par `asset:`. */
 export interface PlaybackSource {

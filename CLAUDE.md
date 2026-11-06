@@ -328,7 +328,8 @@ retour.
 
 Transverses : `i18n.ts` (langue courante et `dict()`, sans DOM ni IPC — testable env Node) ·
 `lang-boot.ts` (réglage `ui_lang`, coquille d'`index.html`, rechargement au changement) ·
-`ipc.ts` (wrappers IPC typés) · `errors.ts` (garantit le `console.error`
+`ipc.ts` (wrappers IPC typés) · `queue-delta.ts` (file tenue en mémoire, mise à jour par lignes
+changées, #92 ; sans DOM ni IPC, testable env Node) · `errors.ts` (garantit le `console.error`
 de la chaîne brute — pas de table code→message, délibérément) · `dom.ts` ·
 `confirm-modal.ts` · `list-virtual.ts` · `queue-panel.ts` / `batch-panel.ts` /
 `batch-tracklist.ts` (file Revue, mode Lot) · `journal.ts` (journal d'actions + revert) ·

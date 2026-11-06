@@ -838,10 +838,48 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
   );
 }
 
+/** Le point unique où le front prend livraison de la file. */
+function prendreLivraison(items: QueueItem[]): QueueItem[] {
+  // P5 (PRD 2026-07-27, D3): a track whose conversion is still running in the background has left
+  // the user's loop, but it is still `pending` backend-side (it only becomes `filed` once the encode
+  // commits), so list_queue keeps returning it. Dropping it HERE is what stops the auto-advance from
+  // re-opening it and the user from converting it a second time, in the rail as well as in Lot mode
+  // (both read currentItems). It comes back on its own if the conversion fails: see the
+  // onFilingOutcome subscription below.
+  let livrees = items.filter((it) => !isFilingInFlight(it.id));
+  // Filtre de SOURCE (fusion 1, DESIGN.md § 15) : cliquer un dossier surveillé dans le rail
+  // restreint la file à ses fichiers, comme cliquer une source dans la sidebar de Finder restreint
+  // sa liste. Appliqué ICI, donc le mode Lot, le badge et l'auto-avance voient tous la même liste,
+  // sans qu'aucun ait à connaître le filtre. `source_id` existe déjà dans le contrat : aucun
+  // aller-retour backend n'est ajouté.
+  if (queueSourceFilter != null) {
+    livrees = livrees.filter((it) => it.source_id === queueSourceFilter);
+  }
+  currentItems = livrees;
+  // This IS the fresh delivery the stale flag was waiting for, and the single point where the
+  // front takes the queue in — so it is also where the badge is brought back in step with the rail.
+  queueCacheStale = false;
+  return livrees;
+}
+
+/** Hors de Revue : tient `currentItems` à jour pour que le retour peigne sans aller-retour (#92).
+ *  L'échec se tait ici : `queueCacheStale` envoie le retour par le chemin qui l'affiche. */
+async function tenirFileAJour(): Promise<void> {
+  try {
+    prendreLivraison(await listQueue());
+  } catch (e) {
+    console.error("listQueue failed off the Revue screen", e);
+    queueCacheStale = true;
+  }
+}
+
 /** Replaces the mockup queue list with real pending items (Revue screen). */
 export async function renderQueue(touchDetail = true) {
   const ql = document.getElementById("ql");
-  if (!ql) return;
+  if (!ql) {
+    await tenirFileAJour();
+    return;
+  }
 
   // Returning to Revue after visiting another screen: app.js's renderRevue rebuilds
   // #qcol/#ql/#mid from scratch on every nav click (content.innerHTML, unconditional), even
@@ -850,8 +888,9 @@ export async function renderQueue(touchDetail = true) {
   // and paint synchronously from the cached currentItems instead of flashing "Chargement…" and
   // re-issuing a full listQueue() IPC round-trip on every tab switch. Real data changes keep
   // arriving through the backend's "queue:changed" event (onQueueChanged → refresh(),
-  // sift-live.ts) independently of navigation — a genuine change while #ql already has rows still
-  // falls through to the full reload below, same as before.
+  // sift-live.ts) independently of navigation: off Revue, `tenirFileAJour` brings them in, so this
+  // paint is fresh without a round trip (#92). A genuine change while #ql already has rows still
+  // falls through to the delta below.
   if (!ql.childElementCount && currentItems.length && !queueCacheStale) {
     const qcol = document.getElementById("qcol");
     if (qcol) ensureQueueColumnChrome(qcol);
@@ -940,24 +979,8 @@ export async function renderQueue(touchDetail = true) {
     }
     return;
   }
-  // P5 (PRD 2026-07-27, D3): a track whose conversion is still running in the background has left
-  // the user's loop, but it is still `pending` backend-side (it only becomes `filed` once the encode
-  // commits), so list_queue keeps returning it. Dropping it HERE — the single point where the front
-  // takes delivery of the queue — is what stops the auto-advance from re-opening it and the user
-  // from converting it a second time, in the rail as well as in Lot mode (both read currentItems).
-  // It comes back on its own if the conversion fails: see the onFilingOutcome subscription below.
-  items = items.filter((it) => !isFilingInFlight(it.id));
-  // Filtre de SOURCE (fusion 1, DESIGN.md § 15) : cliquer un dossier surveillé dans le rail
-  // restreint la file à ses fichiers, comme cliquer une source dans la sidebar de Finder restreint
-  // sa liste. Appliqué ICI, au point unique où le front prend livraison de la file — donc le mode
-  // Lot, le badge et l'auto-avance voient tous la même liste, sans qu'aucun ait à connaître le
-  // filtre. `source_id` existe déjà dans le contrat : aucun aller-retour backend n'est ajouté.
-  if (queueSourceFilter != null) items = items.filter((it) => it.source_id === queueSourceFilter);
-  currentItems = items;
+  items = prendreLivraison(items);
   appPrete();
-  // This IS the fresh delivery the stale flag was waiting for, and the single point where the
-  // front takes the queue in — so it is also where the badge is brought back in step with the rail.
-  queueCacheStale = false;
   const qcol = document.getElementById("qcol");
   if (qcol) ensureQueueColumnChrome(qcol);
   // Background-analysis progress moved to the global progress zone (bottom of #nav, persistent
@@ -1711,10 +1734,9 @@ export function enterBatchMode(): void {
 // `queue:changed`, whose existing handler already refreshes the whole view.
 onFilingOutcome((o) => {
   if (!o.error) return;
-  // Mark the cache stale BEFORE re-rendering: off the Revue screen `#ql` does not exist and
-  // renderQueue returns at once, so the re-fetch below may not happen at all. The flag is what
-  // makes the NEXT paint (on returning to Revue) take the full reload path instead of repainting
-  // the cache this track was filtered out of.
+  // Mark the cache stale BEFORE re-rendering: if the re-fetch below fails off the Revue screen, the
+  // flag is what makes the NEXT paint take the full reload path instead of repainting the cache
+  // this track was filtered out of.
   queueCacheStale = true;
   void renderQueue(false);
 });

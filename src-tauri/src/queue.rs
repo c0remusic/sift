@@ -1,6 +1,7 @@
 //! Read model for the "to process" queue = tracks WHERE status='pending'.
 use rusqlite::Connection;
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 
 // The backend only maintains `analysis_attempts` (persist_failure increments it, reset_analysis
 // clears it). The terminal-state threshold that drops a stuck track from the "Non analysés (N)"
@@ -10,7 +11,7 @@ use serde::Serialize;
 /// One row in the live queue. `verdict` is NULL until the worker (M2b) analyses it — et aussi
 /// quand la colonne porte un verdict dont `verdict_ver` n'est plus la version courante
 /// (`verdict::cached`) : un verdict d'un autre moteur n'est pas un verdict.
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct QueueItem {
     pub id: i64,
     pub path: String,
@@ -76,6 +77,31 @@ pub fn mark_session_start(conn: &Connection) -> rusqlite::Result<()> {
     let now: String = conn.query_row("SELECT datetime('now')", [], |r| r.get(0))?;
     let _ = SESSION_STARTED_AT.set(now);
     Ok(())
+}
+
+/// Ce qui sépare la file livrée au frontend de la file courante (#92). `upserted` porte les lignes
+/// nouvelles ou différentes, `removed` les ids sortis de la file (rangée, écartée, supprimée).
+#[derive(Debug, Serialize, PartialEq)]
+pub struct QueueDelta {
+    pub upserted: Vec<QueueItem>,
+    pub removed: Vec<i64>,
+}
+
+/// Compare deux états entiers plutôt que de faire nommer ses lignes à chaque écrivain : vingt sites
+/// émettent `queue:changed`, et le drapeau `dup` d'une ligne dépend des autres lignes.
+pub fn delta(livree: &[QueueItem], courante: Vec<QueueItem>) -> QueueDelta {
+    let avant: HashMap<i64, &QueueItem> = livree.iter().map(|it| (it.id, it)).collect();
+    let presents: HashSet<i64> = courante.iter().map(|it| it.id).collect();
+    let removed = livree
+        .iter()
+        .map(|it| it.id)
+        .filter(|id| !presents.contains(id))
+        .collect();
+    let upserted = courante
+        .into_iter()
+        .filter(|it| avant.get(&it.id).copied() != Some(it))
+        .collect();
+    QueueDelta { upserted, removed }
 }
 
 /// All pending tracks, oldest first.
@@ -193,6 +219,57 @@ mod tests {
         let q = list_pending(&conn).unwrap();
         assert_eq!(q.len(), 1);
         assert_eq!(q[0].filename, Some("a.mp3".to_string()));
+    }
+
+    fn ligne(id: i64) -> QueueItem {
+        QueueItem {
+            id,
+            path: format!("C:/m/{id}.flac"),
+            filename: None,
+            source_id: None,
+            verdict: None,
+            rail: None,
+            artist: None,
+            title: None,
+            dup: false,
+            needs_analysis: true,
+            analysis_attempts: 0,
+            duration: None,
+            bitrate: None,
+            declared_fmt: None,
+            is_new: false,
+        }
+    }
+
+    #[test]
+    fn delta_sans_changement_est_vide() {
+        let d = delta(&[ligne(1), ligne(2)], vec![ligne(1), ligne(2)]);
+        assert_eq!(
+            d,
+            QueueDelta {
+                upserted: vec![],
+                removed: vec![]
+            }
+        );
+    }
+
+    #[test]
+    fn delta_porte_ajouts_retraits_et_lignes_changees() {
+        let mut changee = ligne(2);
+        changee.dup = true;
+        let d = delta(
+            &[ligne(1), ligne(2), ligne(3)],
+            vec![changee.clone(), ligne(3), ligne(4)],
+        );
+        assert_eq!(d.removed, vec![1]);
+        assert_eq!(d.upserted, vec![changee, ligne(4)]);
+    }
+
+    /// Mirrors shared/contracts.ts's `QueueDelta`. Destructuration exhaustive, comme `QueueItem`.
+    #[test]
+    fn queue_delta_shape_matches_contracts_ts() {
+        let QueueDelta { upserted, removed } = delta(&[], vec![]);
+        assert!(upserted.is_empty() && removed.is_empty());
     }
 
     /// Mirrors shared/contracts.ts's `QueueItem`. Exhaustive destructure (no `..`): fails to
