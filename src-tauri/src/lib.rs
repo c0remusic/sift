@@ -572,7 +572,6 @@ mod commandes_tests {
         "list_bins",
         "list_journal",
         "list_library",
-        "list_removable_drives",
         "locate_source",
         "open_drive",
         "open_url",

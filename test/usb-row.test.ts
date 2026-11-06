@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { setCurrentLang } from "../frontend/i18n";
 import type { RemovableDrive } from "../frontend/ipc";
-import { driveDisplayName, usbEntryHtml } from "../frontend/usb-row";
+import { driveDisplayName, memesDisques, usbEntryHtml } from "../frontend/usb-row";
 
 function drive(over: Partial<RemovableDrive> = {}): RemovableDrive {
   return {
@@ -65,5 +65,16 @@ describe("usbEntryHtml", () => {
     const html = usbEntryHtml(drive({ mount: "<b>E:</b>" }), true);
     expect(html).not.toContain("<b>E:</b>");
     expect(html).toContain("&lt;b&gt;E:&lt;/b&gt;");
+  });
+});
+
+describe("memesDisques", () => {
+  const d = { id: "1", mount: "H:", free_bytes: 10 } as RemovableDrive;
+  it("une relecture identique ne repeint rien", () => {
+    expect(memesDisques([d], [{ ...d }])).toBe(true);
+  });
+  it("une carte retirée, ou de l'espace libre changé, repeint", () => {
+    expect(memesDisques([d], [])).toBe(false);
+    expect(memesDisques([d], [{ ...d, free_bytes: 9 }])).toBe(false);
   });
 });

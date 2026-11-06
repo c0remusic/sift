@@ -16,6 +16,7 @@ import {
   revealTrack,
 } from "./ipc";
 import { installUndoShortcut, installFilingKeys, registerAddSourceAction } from "./filing";
+import { lireLesDisquesEnFond } from "./usb-view";
 import { refreshBinsForBatch } from "./filing-bins";
 import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
@@ -629,5 +630,6 @@ export function installLiveWiring() {
   // Catch an analysis already in flight when the app opens (events only fire on each item after).
   void pushAnalyzeProgress();
   void refresh();
+  void lireLesDisquesEnFond();
 }
 

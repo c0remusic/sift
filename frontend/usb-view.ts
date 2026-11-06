@@ -19,7 +19,7 @@ import { listRemovableDrives, driveUsage, ejectDrive, openDrive } from "./ipc";
 import type { RemovableDrive, UsageReport } from "./ipc";
 import { requireEl, esc } from "./dom";
 import { openUsbFormatModal } from "./usb-format-modal";
-import { usbEntryHtml, driveDisplayName } from "./usb-row";
+import { usbEntryHtml, driveDisplayName, memesDisques } from "./usb-row";
 import { renderUsageChart, formatGo, humanizeEject, humanizeUsageError } from "./usage-chart";
 import { mountBarActions } from "./toolbar";
 import { emptyStateHtml } from "./empty-state";
@@ -37,6 +37,20 @@ let usbFormatDoneHandler: (() => void) | null = null;
  * (retour sur l'écran, Actualiser) tant que le disque est encore branché — sinon le premier. */
 let drives: RemovableDrive[] = [];
 let activeId: string | null = null;
+/** `drives` vient d'une lecture réussie : `[]` y veut dire « aucun disque ». */
+let connus = false;
+
+/** Une lecture WMI prend ≈ 0,5 s : la première se fait au démarrage, pour que le premier passage
+ * ait déjà une liste à peindre (#92). L'échec se tait ici : `connus` reste faux, et le passage
+ * suivant passe par `reload`, qui l'affiche. */
+export async function lireLesDisquesEnFond(): Promise<void> {
+  try {
+    drives = await listRemovableDrives();
+    connus = true;
+  } catch (e) {
+    console.error("listRemovableDrives failed in the background", e);
+  }
+}
 
 function skeleton(): string {
   return (
@@ -51,11 +65,16 @@ function skeleton(): string {
 export function renderUsbLive(): void {
   const content = requireEl("#content", "renderUsbLive");
   // Squelette statique au premier passage (DESIGN.md § 6). Un re-rendu garde l'écran précédent.
-  if (!content.querySelector(".sift-usb-layout, .sift-empty-state")) content.innerHTML = skeleton();
+  if (!connus && !content.querySelector(".sift-usb-layout, .sift-empty-state")) {
+    content.innerHTML = skeleton();
+  }
   mountBar();
   if (usbFormatDoneHandler) window.removeEventListener("sift:usb-format-done", usbFormatDoneHandler);
   usbFormatDoneHandler = () => void reload();
   window.addEventListener("sift:usb-format-done", usbFormatDoneHandler);
+  // La mémoire d'abord, puis une relecture en fond à chaque passage : Windows ne signale pas de façon
+  // fiable une carte retirée d'un lecteur, ni aucun des deux mécanismes sondés (#92).
+  if (connus) peindreListe(content);
   void reload();
 }
 
@@ -78,10 +97,13 @@ async function reload(): Promise<void> {
   // Jeton capturé dans le même geste que `#content` (issue #42) : l'énumération WMI prend des
   // secondes, et l'utilisateur peut avoir changé d'écran entre-temps.
   const token = viewEpoch();
+  const avant = connus ? drives : null;
   try {
     drives = await listRemovableDrives();
+    connus = true;
   } catch (e) {
     console.error("listRemovableDrives failed", e);
+    connus = false;
     if (isStaleViewRender(token)) return;
     drives = [];
     setCount("");
@@ -93,6 +115,12 @@ async function reload(): Promise<void> {
     return;
   }
   if (isStaleViewRender(token)) return;
+  if (avant && memesDisques(avant, drives)) return;
+  peindreListe(content);
+}
+
+/** Peint `drives`, ou l'état vide. */
+function peindreListe(content: HTMLElement): void {
   if (!drives.length) {
     activeId = null;
     setCount("");

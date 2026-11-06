@@ -8,8 +8,8 @@ use usb_format::backend_for_this_os as backend;
 
 /// List drives Sift is confident are removable (conservative filter — see backend docs).
 #[tauri::command]
-pub fn list_removable_drives() -> Result<Vec<RemovableDrive>, String> {
-    backend().list().map_err(|e| e.to_string())
+pub async fn list_removable_drives() -> Result<Vec<RemovableDrive>, String> {
+    crate::ipc::hors_du_fil(|| backend().list().map_err(|e| e.to_string())).await
 }
 
 /// Étape courante du formatage privilégié, pour que l'écran montre ce qui se passe.

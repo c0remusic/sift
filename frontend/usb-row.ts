@@ -14,6 +14,11 @@ import { esc } from "./dom";
 import { formatGo } from "./usage-chart";
 import { T } from "./i18n/usb-row";
 
+/** Vrai quand une relecture n'apporte rien : repeindre ferait clignoter l'occupation pour rien. */
+export function memesDisques(a: RemovableDrive[], b: RemovableDrive[]): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 /** Ce que l'utilisateur appelle ce disque. `drive.id` est devenu un chemin de disque physique
  * (`\\.\PHYSICALDRIVE2`, `/dev/disk4`) le 2026-07-31 pour que les clés non formatées puissent
  * exister dans la liste — correct côté backend, mais illisible sur une ligne et impossible à

@@ -68,7 +68,7 @@ disponible, point de montage, état S.M.A.R.T. ») et ce que l'écran en fait :
      « Connexion » : le bus n'est pas remonté par `RemovableDrive`, on n'invente pas.
   4. **Actions** (`.sift-usb-actions`) : Formater… (sheet) · Éjecter · Relire le disque. Un refus
      d'éjection s'écrit sur place (`humanizeEject`, `role="status"`).
-- **Barre** : Actualiser seul (l'énumération WMI est à la demande) ; compte « N disques ».
+- **Barre** : Actualiser seul ; compte « N disques ». L'écran peint la dernière liste lue, puis la relit en fond à chaque passage : une carte retirée se voit ≈ 0,5 s plus tard (#92). Actualiser relit sans quitter l'écran.
 - **Pas de zone D** : le disque est la zone C. La § Layout ci-dessus (liste en C, détail en D)
   est **remplacée** par ceci ; `DESIGN.md` § 15 recalé le même jour.
 - Partis : la carte `.sift-settings-stack` de 560 px, le paragraphe d'explication, la ligne
