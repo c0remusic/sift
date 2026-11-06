@@ -1028,7 +1028,7 @@ fn measure_track_open(ds: &FilingDataset) {
         "find_duplicate (aucun match)",
         measure(
             || {
-                crate::dedup::find_duplicate(&ds.conn, id).expect("find_duplicate");
+                crate::dedup::find_duplicate_sous_verrou(&ds.conn, id).expect("find_duplicate");
             },
             ITERS_LOOP,
         ),
@@ -1049,7 +1049,7 @@ fn measure_track_open(ds: &FilingDataset) {
     );
     // The previous loop leaves both fingerprints cached; take one more call to be explicit about
     // it rather than relying on that side effect.
-    crate::dedup::find_duplicate(&ds.conn, dup_id).expect("warm fingerprint cache");
+    crate::dedup::find_duplicate_sous_verrou(&ds.conn, dup_id).expect("warm fingerprint cache");
     summarize(
         "find_duplicate (match, empreinte en cache)",
         measure(
@@ -1071,7 +1071,7 @@ fn measure_track_open(ds: &FilingDataset) {
 
 /// Runs `find_duplicate` and fails the bench unless the sound-confirmed branch really ran.
 fn assert_sound_confirmed_match(conn: &Connection, track_id: i64) {
-    let m = crate::dedup::find_duplicate(conn, track_id).expect("find_duplicate");
+    let m = crate::dedup::find_duplicate_sous_verrou(conn, track_id).expect("find_duplicate");
     let kind = m.map(|d| d.kind).unwrap_or_default();
     assert_eq!(
         kind, "both",

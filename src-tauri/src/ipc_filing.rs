@@ -1520,8 +1520,7 @@ pub fn get_session_id(conn: State<'_, Mutex<Connection>>) -> Result<String, Stri
 pub async fn find_duplicate(app: AppHandle, track_id: i64) -> Result<Option<DupMatch>, String> {
     crate::ipc::hors_du_fil(move || {
         let state = app.state::<Mutex<Connection>>();
-        let conn = db::lock_conn(&state)?;
-        dedup::find_duplicate(&conn, track_id).map_err(|e| e.to_string())
+        dedup::find_duplicate(&state, track_id)
     })
     .await
 }

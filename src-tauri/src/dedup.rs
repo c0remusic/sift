@@ -9,6 +9,7 @@ use crate::fingerprint;
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
 
 /// A candidate row loaded for matching: (id, path, status, folder, filename).
 type CandRow = (i64, String, String, Option<String>, Option<String>);
@@ -896,10 +897,15 @@ pub(crate) fn group_name_dups(rows: &[NameDupRow], refus: &HashSet<(i64, i64)>) 
     dups
 }
 
-/// The best duplicate match for `track_id` by name (other pending or filed track sharing its
-/// name key). `None` if no name collides. Slice A returns `kind = "name"`; the acoustic layer
-/// (slice B) upgrades to `both` when the sound confirms.
-pub fn find_duplicate(conn: &Connection, track_id: i64) -> rusqlite::Result<Option<DupMatch>> {
+/// Ce qui se lit sous verrou pour chercher le doublon d'une piste : son chemin, les paires
+/// refusées, les candidates.
+struct Candidats {
+    path: String,
+    refus: HashSet<(i64, i64)>,
+    rows: Vec<CandRow>,
+}
+
+fn lire_candidats(conn: &Connection, track_id: i64) -> rusqlite::Result<Option<Candidats>> {
     let path: String = match conn.query_row(
         "SELECT path FROM tracks WHERE id=?1",
         params![track_id],
@@ -908,27 +914,32 @@ pub fn find_duplicate(conn: &Connection, track_id: i64) -> rusqlite::Result<Opti
         Ok(p) => p,
         Err(_) => return Ok(None),
     };
-    let key = key_for_path(&path);
-    if key.is_empty() {
-        return Ok(None);
-    }
     // Une paire refusée (« Ce ne sont pas des doublons ») ne fait plus de bandeau.
     let refus = crate::doublons::charger_refus(conn)?;
-
     let mut stmt = conn.prepare(
         "SELECT id, path, status, folder, filename FROM tracks
          WHERE status IN ('pending','filed') AND id<>?1",
     )?;
-    let rows: Vec<CandRow> = stmt
+    let rows = stmt
         .query_map(params![track_id], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
         })?
         .collect::<rusqlite::Result<_>>()?;
+    Ok(Some(Candidats { path, refus, rows }))
+}
 
+/// La meilleure candidate par nom. Sans connexion : normaliser chaque nom de la bibliothèque prend
+/// ≈ 100 ms, et sous le verrou chaque ouverture de piste attendait ce calcul (#103).
+fn meilleur_candidat(track_id: i64, c: Candidats) -> Option<(String, CandRow)> {
+    let key = key_for_path(&c.path);
+    if key.is_empty() {
+        return None;
+    }
     // Prefer a filed match (it's "already in your library") over another pending one.
     let mut best: Option<CandRow> = None;
-    for (id, cand_path, status, folder, filename) in rows {
-        if key_for_path(&cand_path) != key || refus.contains(&(track_id.min(id), track_id.max(id)))
+    for (id, cand_path, status, folder, filename) in c.rows {
+        if key_for_path(&cand_path) != key
+            || c.refus.contains(&(track_id.min(id), track_id.max(id)))
         {
             continue;
         }
@@ -944,17 +955,18 @@ pub fn find_duplicate(conn: &Connection, track_id: i64) -> rusqlite::Result<Opti
             }
         }
     }
+    best.map(|b| (c.path, b))
+}
 
-    let Some((id, cand_path, status, folder, filename)) = best else {
-        return Ok(None);
-    };
-
-    // Confirm by sound: compare cached/lazy fingerprints. `both` if the sound agrees, else
-    // `name` (names match but the recording differs, or audio unreadable — "à vérifier").
-    let (kind, score) = match (
-        get_or_compute_fp(conn, track_id, &path),
-        get_or_compute_fp(conn, id, &cand_path),
-    ) {
+/// Confirm by sound: compare cached/lazy fingerprints. `both` if the sound agrees, else
+/// `name` (names match but the recording differs, or audio unreadable — "à vérifier").
+fn confirmer_au_son(
+    track_id: i64,
+    path: &str,
+    (id, cand_path, status, folder, filename): CandRow,
+    mut empreinte: impl FnMut(i64, &str) -> Option<Vec<u32>>,
+) -> DupMatch {
+    let (kind, score) = match (empreinte(track_id, path), empreinte(id, &cand_path)) {
         (Some(fa), Some(fb)) => {
             let s = fingerprint::similarity(&fa, &fb);
             if s >= fingerprint::MATCH_THRESHOLD {
@@ -965,23 +977,61 @@ pub fn find_duplicate(conn: &Connection, track_id: i64) -> rusqlite::Result<Opti
         }
         _ => ("name", 1.0),
     };
-
-    Ok(Some(DupMatch {
+    DupMatch {
         id,
         status,
         folder,
         filename,
         kind: kind.to_string(),
         score,
-    }))
+    }
 }
 
-/// Fetch a track's fingerprint from the `tracks.fingerprint` cache, or compute it from the
-/// file and cache it. `None` if the audio can't be fingerprinted (short/corrupt/missing).
+/// The best duplicate match for `track_id` by name (other pending or filed track sharing its
+/// name key). `None` if no name collides. Slice A returns `kind = "name"`; the acoustic layer
+/// (slice B) upgrades to `both` when the sound confirms.
 ///
+/// Le verrou n'est tenu que pendant les lectures : le nom et l'empreinte se calculent dehors.
+pub fn find_duplicate(
+    verrou: &Mutex<Connection>,
+    track_id: i64,
+) -> Result<Option<DupMatch>, String> {
+    let candidats = {
+        let conn = verrou.lock().map_err(|e| e.to_string())?;
+        lire_candidats(&conn, track_id).map_err(|e| e.to_string())?
+    };
+    let Some((path, best)) = candidats.and_then(|c| meilleur_candidat(track_id, c)) else {
+        return Ok(None);
+    };
+    Ok(Some(confirmer_au_son(track_id, &path, best, |id, p| {
+        empreinte_hors_verrou(verrou, id, p, |p| fingerprint::compute_for_path(p).ok())
+    })))
+}
+
+/// Convenance de test : les mêmes étapes sous une seule connexion. La production ne doit pas avoir
+/// ce chemin. Même forme que `name_dups`.
+#[cfg(test)]
+pub fn find_duplicate_sous_verrou(
+    conn: &Connection,
+    track_id: i64,
+) -> rusqlite::Result<Option<DupMatch>> {
+    let Some((path, best)) =
+        lire_candidats(conn, track_id)?.and_then(|c| meilleur_candidat(track_id, c))
+    else {
+        return Ok(None);
+    };
+    Ok(Some(confirmer_au_son(track_id, &path, best, |id, p| {
+        lire_empreinte(conn, id).or_else(|| {
+            let fp = fingerprint::compute_for_path(p).ok()?;
+            ecrire_empreinte(conn, id, &fp);
+            Some(fp)
+        })
+    })))
+}
+
 /// Une empreinte dont `fingerprint_ver` n'est pas la version courante est traitée comme absente
 /// (`fingerprint::cached`) : elle se recalcule et s'écrase, elle ne remonte jamais une erreur.
-fn get_or_compute_fp(conn: &Connection, track_id: i64, path: &str) -> Option<Vec<u32>> {
+fn lire_empreinte(conn: &Connection, track_id: i64) -> Option<Vec<u32>> {
     let cached: Option<String> = conn
         .query_row(
             "SELECT fingerprint, fingerprint_ver FROM tracks WHERE id=?1",
@@ -990,25 +1040,38 @@ fn get_or_compute_fp(conn: &Connection, track_id: i64, path: &str) -> Option<Vec
         )
         .ok()
         .flatten();
-    if let Some(s) = cached {
-        if !s.is_empty() {
-            return Some(fingerprint::decode(&s));
-        }
+    cached
+        .filter(|s| !s.is_empty())
+        .map(|s| fingerprint::decode(&s))
+}
+
+fn ecrire_empreinte(conn: &Connection, track_id: i64, fp: &[u32]) {
+    let _ = conn.execute(
+        "UPDATE tracks SET fingerprint=?2, fingerprint_ver=?3 WHERE id=?1",
+        params![
+            track_id,
+            fingerprint::encode(fp),
+            fingerprint::FINGERPRINT_CACHE_VERSION
+        ],
+    );
+}
+
+/// Fetch a track's fingerprint from the `tracks.fingerprint` cache, or compute it from the
+/// file and cache it. `None` if the audio can't be fingerprinted (short/corrupt/missing). Décoder un
+/// fichier prend des secondes : le verrou tombe pendant `calcul`.
+fn empreinte_hors_verrou(
+    verrou: &Mutex<Connection>,
+    track_id: i64,
+    path: &str,
+    calcul: impl FnOnce(&str) -> Option<Vec<u32>>,
+) -> Option<Vec<u32>> {
+    let en_cache = lire_empreinte(&*verrou.lock().ok()?, track_id);
+    if en_cache.is_some() {
+        return en_cache;
     }
-    match fingerprint::compute_for_path(path) {
-        Ok(fp) => {
-            let _ = conn.execute(
-                "UPDATE tracks SET fingerprint=?2, fingerprint_ver=?3 WHERE id=?1",
-                params![
-                    track_id,
-                    fingerprint::encode(&fp),
-                    fingerprint::FINGERPRINT_CACHE_VERSION
-                ],
-            );
-            Some(fp)
-        }
-        Err(_) => None,
-    }
+    let fp = calcul(path)?;
+    ecrire_empreinte(&*verrou.lock().ok()?, track_id, &fp);
+    Some(fp)
 }
 
 #[cfg(test)]
@@ -1145,7 +1208,9 @@ mod tests {
         let dups = name_dups(&conn).unwrap();
         assert!(dups.contains(&a) && dups.contains(&b) && dups.contains(&c));
         assert!(
-            find_duplicate(&conn, a).unwrap().is_some_and(|m| m.id == c),
+            find_duplicate_sous_verrou(&conn, a)
+                .unwrap()
+                .is_some_and(|m| m.id == c),
             "le bandeau saute la paire refusée"
         );
     }
@@ -1157,7 +1222,7 @@ mod tests {
         let a = add(&conn, "/cd1/Track 01.mp3", "pending");
         let _b = add(&conn, "/cd2/Track 01.mp3", "pending");
         assert!(name_dups(&conn).unwrap().is_empty());
-        assert!(find_duplicate(&conn, a).unwrap().is_none());
+        assert!(find_duplicate_sous_verrou(&conn, a).unwrap().is_none());
     }
 
     #[test]
@@ -1187,7 +1252,7 @@ mod tests {
         )
         .unwrap();
 
-        let m = find_duplicate(&conn, cur).unwrap().unwrap();
+        let m = find_duplicate_sous_verrou(&conn, cur).unwrap().unwrap();
         assert_eq!(m.id, filed);
         assert_eq!(m.status, "filed");
         assert_eq!(m.folder.as_deref(), Some("House"));
@@ -1217,7 +1282,7 @@ mod tests {
         let id_a = add(&conn, a.to_str().unwrap(), "pending");
         let _id_b = add(&conn, b.to_str().unwrap(), "pending");
 
-        let m = find_duplicate(&conn, id_a).unwrap().unwrap();
+        let m = find_duplicate_sous_verrou(&conn, id_a).unwrap().unwrap();
         assert_eq!(
             m.kind, "both",
             "same recording, same name → sound-confirmed"
@@ -1238,7 +1303,7 @@ mod tests {
         let conn = db();
         let cur = add(&conn, "/dl/Unique Artist - Unique Title.mp3", "pending");
         add(&conn, "/dl/Someone Else - Other Song.mp3", "pending");
-        assert!(find_duplicate(&conn, cur).unwrap().is_none());
+        assert!(find_duplicate_sous_verrou(&conn, cur).unwrap().is_none());
     }
 
     #[test]
@@ -2137,5 +2202,25 @@ mod tests {
             vec![vec![1, 2, 3, 4, 5]],
             "chaîne 240-242-244 par bords exacts, puis la 4e sans durée agrège la 5e"
         );
+    }
+
+    /// #103 : décoder un fichier sous le verrou bloquait toute l'ouverture de la piste.
+    #[test]
+    fn le_verrou_tombe_pendant_le_calcul_de_l_empreinte() {
+        let conn = db();
+        let id = add(&conn, "C:/m/a.flac", "pending");
+        let verrou = Mutex::new(conn);
+        let vue = empreinte_hors_verrou(&verrou, id, "C:/m/a.flac", |_| {
+            assert!(
+                verrou.try_lock().is_ok(),
+                "le calcul s'est fait sous le verrou"
+            );
+            Some(vec![1, 2, 3])
+        });
+        assert_eq!(vue, Some(vec![1, 2, 3]));
+        let en_cache = empreinte_hors_verrou(&verrou, id, "C:/m/a.flac", |_| {
+            panic!("une empreinte en cache ne se recalcule pas")
+        });
+        assert_eq!(en_cache, Some(vec![1, 2, 3]));
     }
 }
